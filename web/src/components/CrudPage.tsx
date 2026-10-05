@@ -24,11 +24,15 @@ export interface CrudColumn<T> {
 /** Generic list + create/edit modal page used for master data and users. */
 export function CrudPage<T extends { id: number }, F extends Record<string, unknown>>({
   title, subtitle, endpoint, exportPath, exportName, columns, fields, toForm, emptyForm, toPayload, canManage, newLabel, banner, canDelete = true, onSaved,
+  embedded = false, rowClassName,
 }: {
   title: string; subtitle: string; endpoint: string; exportPath?: string; exportName?: string;
   columns: CrudColumn<T>[]; fields: CrudField<F>[];
   toForm: (row: T) => F; emptyForm: () => F; toPayload: (form: F, isNew: boolean) => unknown;
   canManage: boolean; newLabel: string; banner?: ReactNode; canDelete?: boolean; onSaved?: () => void;
+  /** Render inside another page (e.g. a tab): no page header; actions move into the table toolbar. */
+  embedded?: boolean;
+  rowClassName?: (row: T) => string;
 }) {
   const { t } = useI18n();
   const { data, loading, error, reload } = useAsync(() => api<T[]>('GET', endpoint), [endpoint]);
@@ -59,17 +63,20 @@ export function CrudPage<T extends { id: number }, F extends Record<string, unkn
   const rows = (data ?? []).filter((r) => !query || JSON.stringify(r).toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const set = (key: string, value: unknown) => setEditing((e) => (e ? { ...e, form: { ...e.form, [key]: value } } : e));
 
+  const actions = <>
+    {exportPath && <ExportButton path={exportPath} filename={exportName ?? 'export.xlsx'} />}
+    {canManage && <Button variant="primary" size={embedded ? 'sm' : undefined} onClick={() => { setFormError(null); setEditing({ row: null, form: emptyForm() }); }}><Icon name="plus" /> {newLabel}</Button>}
+  </>;
+
   return (
     <>
-      <PageHeader title={title} subtitle={subtitle} actions={<>
-        {exportPath && <ExportButton path={exportPath} filename={exportName ?? 'export.xlsx'} />}
-        {canManage && <Button variant="primary" onClick={() => { setFormError(null); setEditing({ row: null, form: emptyForm() }); }}><Icon name="plus" /> {newLabel}</Button>}
-      </>} />
+      {!embedded && <PageHeader title={title} subtitle={subtitle} actions={actions} />}
       {banner}
       <Card flush>
         <div className="table-toolbar">
-          <Input type="search" placeholder={t('common.search')} value={query} onChange={(e) => setQuery(e.target.value)} style={{ maxWidth: 280 }} />
+          <Input type="search" placeholder={t('common.search')} aria-label={t('common.search')} value={query} onChange={(e) => setQuery(e.target.value)} style={{ maxWidth: 280 }} />
           <span className="muted">{rows.length}</span>
+          {embedded && <span className="toolbar-right">{actions}</span>}
         </div>
         {loading && !data ? <Spinner /> : error ? <div className="card-body"><ErrorMessage error={error} /></div> : rows.length === 0 ? <Empty>{t('common.noData')}</Empty> : (
           <div className="table-scroll">
@@ -77,7 +84,7 @@ export function CrudPage<T extends { id: number }, F extends Record<string, unkn
               <thead><tr>{columns.map((c) => <th key={c.header} className={c.align === 'right' ? 'r' : ''}>{c.header}</th>)}{canManage && <th />}</tr></thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id} className={canManage ? 'clickable' : ''} onClick={canManage ? () => { setFormError(null); setEditing({ row: r, form: toForm(r) }); } : undefined}>
+                  <tr key={r.id} className={`${canManage ? 'clickable' : ''} ${rowClassName?.(r) ?? ''}`} onClick={canManage ? () => { setFormError(null); setEditing({ row: r, form: toForm(r) }); } : undefined}>
                     {columns.map((c) => <td key={c.header} className={c.align === 'right' ? 'r num' : ''}>{c.render(r)}</td>)}
                     {canManage && <td className="r muted"><Icon name="chevron" /></td>}
                   </tr>
