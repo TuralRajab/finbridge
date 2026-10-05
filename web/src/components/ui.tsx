@@ -222,7 +222,7 @@ export function Variance({ value, percent, showPct = false }: { value: number; p
   const state = varianceState(value);
   const icon = state === 'over' ? '▲' : state === 'under' ? '▼' : '•';
   return (
-    <span className={`var var-${state}`} title={state === 'over' ? t('dashboard.over') : state === 'under' ? t('dashboard.under') : undefined}>
+    <span className={`var var-${state}`} title={state === 'over' ? t('common.overBudget') : state === 'under' ? t('common.underBudget') : undefined}>
       <span className="var-ico" aria-hidden="true">{icon}</span>
       {signedMoney(value, locale)}
       {showPct && percent !== undefined && <small className="var-pct">{pct(percent, locale)}</small>}

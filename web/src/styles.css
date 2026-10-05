@@ -364,3 +364,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .wf-history li { padding: 6px 0; border-bottom: 1px dashed var(--grid); }
 .wf-history li:last-child { border-bottom: 0; }
 .setup-banner { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 10px 16px; background: var(--warn-bg); border-bottom: 1px solid var(--warn-border); color: var(--warn); }
+/* keep absolutely positioned helpers (e.g. .sr-only labels) inside scroll containers */
+.table-scroll, .grid-scroll { position: relative; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.tabs { overflow-x: auto; scrollbar-width: thin; }
+.tab { flex: 0 0 auto; }
+.toolbar-right { flex-wrap: wrap; }
+@media (max-width: 720px) { .toolbar-right { margin-left: 0; } }
+.card-head { flex-wrap: wrap; }
+.card-actions { flex-wrap: wrap; }
+.card-head > div:first-child { min-width: 0; }
+.page-actions { min-width: 0; max-width: 100%; }
+.page-actions > * { max-width: 100%; }
+.badge { gap: 4px; }

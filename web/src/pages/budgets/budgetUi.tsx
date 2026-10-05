@@ -20,7 +20,8 @@ export function AmountInput({ value, onChange, label, placeholder, min0 }: {
       aria-invalid={invalid || undefined}
       placeholder={placeholder}
       value={text ?? (value === null ? '' : money(value, locale, value % 1 ? 2 : 0))}
-      onFocus={(e) => { setText(value === null ? '' : String(value)); const el = e.target; requestAnimationFrame(() => el.select()); }}
+      // keep the displayed (formatted) text on focus so the selection survives and typing replaces it; parseAmount reads it back
+      onFocus={(e) => { setText(e.target.value); e.target.select(); }}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => {
         if (text !== null) {

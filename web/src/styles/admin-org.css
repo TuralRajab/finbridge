@@ -71,7 +71,7 @@
 .tpl-list .tpl-card { padding: 12px 14px; }
 .tpl-list .tpl-card p { display: none; }
 .tpl-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
-@media (max-width: 1000px) { .tpl-layout { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .tpl-layout { grid-template-columns: minmax(0, 1fr); } }
 
 .unit-tree, .unit-tree ul { list-style: none; margin: 0; padding: 0; }
 .unit-tree ul { padding-left: 18px; border-left: 1px dashed var(--border-strong); margin-left: 8px; }

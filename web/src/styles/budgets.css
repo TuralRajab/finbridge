@@ -60,7 +60,7 @@
 
 /* ---------- change requests ---------- */
 .change-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-@media (max-width: 1100px) { .change-layout { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .change-layout { grid-template-columns: minmax(0, 1fr); } }
 .change-summary { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 900px) { .change-summary { grid-template-columns: 1fr 1fr; } }
 .reason-text { white-space: pre-wrap; color: var(--text); }
@@ -103,3 +103,6 @@
 .import-issues { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
 .import-issues .table td, .import-issues .table th { padding: 6px 10px; font-size: 13px; }
 .import-issues thead th { position: sticky; top: 0; z-index: 1; }
+.version-picker { min-width: 0; max-width: 100%; }
+.version-picker select { max-width: 100%; min-width: 0; }
+@media (max-width: 520px) { .page-actions .version-picker, .page-actions .version-picker .input { width: 100%; min-width: 0; max-width: 100%; } .page-actions .version-picker { flex: 1 1 100%; } }

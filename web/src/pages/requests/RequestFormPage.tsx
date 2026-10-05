@@ -373,7 +373,7 @@ function RequestForm({ existing }: { existing: PurchaseRequestDto | null }) {
                           <div>
                             <b>{s.name}</b> <span className="muted small">{t(`approverType.${s.approverType}` as TKey)}</span>
                             <div className="small">{s.included ? (s.approvers.join(', ') || '—') : <span className="muted">{L.routingSkipped}</span>}</div>
-                            {s.note && <div className="small muted">{s.note}</div>}
+                            {s.included && s.note && <div className="small muted">{s.note}</div>}
                           </div>
                         </li>
                       ))}

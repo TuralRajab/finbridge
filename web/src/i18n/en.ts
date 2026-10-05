@@ -105,6 +105,8 @@ export const en: Dict = {
     steps: 'Steps',
     more: 'More',
     print: 'Print',
+    overBudget: 'Over budget',
+    underBudget: 'Under budget (saving)',
     refresh: 'Refresh',
   },
   nav: {

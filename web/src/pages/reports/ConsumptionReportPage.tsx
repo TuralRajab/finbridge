@@ -312,7 +312,7 @@ function TransactionsView({ rows, loading, error, ccy, allLink }: { rows: Transa
   const L = useLocal(TEXT);
   const actualTotal = (rows ?? []).filter((r) => r.kind === 'ACTUAL').reduce((s, r) => s + r.amount, 0);
   const requestTotal = (rows ?? []).filter((r) => r.kind === 'REQUEST' && !['REJECTED', 'CANCELLED'].includes(r.status)).reduce((s, r) => s + r.amount, 0);
-  const sourceLabel = (s: string) => (s === 'MANUAL' ? L.sourceMANUAL : s === 'IMPORT' ? L.sourceIMPORT : s === 'REQUEST' ? L.sourceREQUEST : s);
+  const sourceLabel = (s: string) => (s === 'MANUAL' ? L.sourceMANUAL : s === 'IMPORT' || s === 'EXCEL' ? L.sourceIMPORT : s === 'REQUEST' ? L.sourceREQUEST : s);
   return (
     <Card flush title={L.transactions} subtitle={ccy} actions={allLink ? <Link className="btn btn-secondary btn-sm" to={allLink}>{L.allTransactions}</Link> : undefined}>
       {loading && !rows ? <Spinner /> : error ? <div className="card-body"><ErrorMessage error={error} /></div> : !rows?.length ? <Empty>{L.txEmpty}</Empty> : (

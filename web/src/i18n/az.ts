@@ -107,6 +107,8 @@ export const az = {
     steps: 'Mərhələlər',
     more: 'Daha çox',
     print: 'Çap et',
+    overBudget: 'Büdcədən artıq',
+    underBudget: 'Büdcədən az (qənaət)',
     refresh: 'Yenilə',
   },
   nav: {
