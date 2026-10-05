@@ -55,6 +55,16 @@ hər addımın audit tarixçəsi, lisenziya limitlərinin serverdə yoxlanması.
 Arxitektura: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · API: [docs/API.md](docs/API.md) ·
 Fərziyyə (RAT): [docs/RAT.md](docs/RAT.md)
 
+## Kompüterə heç nə quraşdırmadan (GitHub Codespaces)
+
+Node.js quraşdırmaq mümkün deyilsə (məs. şirkət kompüteri), layihəni brauzerdə işə salmaq olar:
+
+1. GitHub-da reponu açın və lazımi budağı seçin.
+2. **Code → Codespaces → Create codespace on …** basın.
+3. Bir neçə dəqiqə gözləyin: paketlər quraşdırılır, demo məlumat yüklənir və tətbiq avtomatik başlayır
+   (`.devcontainer/devcontainer.json`).
+4. Aşağıdakı **Ports** tabında `4000 (FinBridge)` sətrindəki 🌐 işarəsinə basın — tətbiq yeni tabda açılır.
+
 ---
 
 ## Tez başlanğıc
