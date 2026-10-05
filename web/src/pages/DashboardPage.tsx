@@ -164,7 +164,7 @@ export function DashboardPage() {
             <Kpi label={L.consumption} value={pct(T.consumptionPct, locale, false)} foot={L.consumptionFoot} />
           </div>
 
-          <div className="grid-dash">
+          <div className="grid-dash rep-grid">
             <Card title={L.monthly} subtitle={`${year} · ${ccy}`}>
               <MonthlyChart data={data.monthly} currency={ccy} />
             </Card>
@@ -181,7 +181,7 @@ export function DashboardPage() {
             </Card>
           </div>
 
-          <div className="grid-dash">
+          <div className="grid-dash rep-grid">
             <Card title={L.sections} subtitle={`${L.sectionsHint} · ${ccy}`} flush actions={<Link className="btn btn-secondary btn-sm" to={link({ through })}>{L.allConsumption}</Link>}>
               {data.sections.length === 0 ? <Empty>{t('common.noData')}</Empty> : (
                 <div className="table-scroll">

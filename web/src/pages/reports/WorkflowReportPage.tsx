@@ -137,7 +137,7 @@ export function WorkflowReportPage() {
         <div className="kpi"><div className="kpi-label">{L.avgCycle}</div><div className="kpi-value num">{dur(avgAll === null ? null : Math.round(avgAll * 10) / 10)}</div><div className="kpi-foot">{L.avgCycleHint}</div></div>
       </div>
 
-      <div className="grid-dash">
+      <div className="grid-dash rep-grid">
         <Card title={L.byType} flush>
           {data.byType.length === 0 ? <Empty>{L.noData}</Empty> : (
             <div className="table-scroll">
@@ -194,7 +194,7 @@ export function WorkflowReportPage() {
       <Card flush>
         <div className="table-toolbar">
           <Tabs tabs={[{ value: 'pending', label: `${L.listPending} (${data.pending.length})` }, { value: 'overdue', label: `${L.listOverdue} (${data.overdue.length})` }]} value={list} onChange={setList} />
-          <div className="toolbar-right">
+          <div className="toolbar-right inline-field">
             <Field label={L.type}>{(id) => (
               <Select id={id} value={type} onChange={(e) => setType(e.target.value)}
                 options={[{ value: '', label: L.allTypes }, ...types.map((x) => ({ value: x, label: t(`workflowType.${x}` as TKey) }))]} />

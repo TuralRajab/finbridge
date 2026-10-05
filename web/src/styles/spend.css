@@ -1,0 +1,68 @@
+/* Spend control: purchase / expense requests and actuals. */
+.nowrap { white-space: nowrap; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--brand); font-weight: 600; cursor: pointer; text-align: left; }
+.link-btn:hover { text-decoration: underline; }
+
+/* list */
+.filters-check { margin: 0 0 8px; }
+.req-table td { vertical-align: top; }
+.req-title { min-width: 200px; max-width: 340px; }
+.req-title span { display: block; }
+.req-head-badges { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+
+/* form & detail layout */
+.req-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.req-main, .req-side { display: grid; gap: 20px; min-width: 0; }
+.req-side { position: sticky; top: 16px; }
+@media (max-width: 1100px) {
+  .req-layout { grid-template-columns: minmax(0, 1fr); }
+  .req-side { position: static; }
+}
+.req-layout .card { margin-bottom: 0; }
+.req-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.req-facts dd { font-weight: 650; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .req-facts, .fc-grid { grid-template-columns: minmax(0, 1fr) !important; } }
+.req-desc { white-space: pre-wrap; color: var(--text); }
+.form-actions { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; margin: 20px 0 8px; }
+.form-actions .alert { align-self: stretch; margin: 0; }
+.form-actions .row-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* funds check */
+.fc { display: grid; gap: 10px; }
+.fc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.fc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.fc-grid div { background: var(--subtle); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.fc-grid dt { font-size: 12px; color: var(--muted); }
+.fc-grid dd { margin: 2px 0 0; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-grid .fc-neg { background: var(--over-bg); border-color: var(--over-border); }
+.fc-grid .fc-neg dd { color: var(--over); }
+.fc-meter { height: 10px; border-radius: 5px; background: var(--grid); overflow: hidden; display: flex; }
+.fc-meter-used { background: var(--bar-actual); height: 100%; }
+.fc-meter-req { height: 100%; background: repeating-linear-gradient(45deg, #6d9be6 0 3px, #a9c3f0 3px 6px); }
+.fc-NEAR .fc-meter-req { background: repeating-linear-gradient(45deg, #e0a03a 0 3px, #f9d59b 3px 6px); }
+.fc-OVER .fc-meter { box-shadow: inset 0 0 0 1px var(--over); }
+.fc-OVER .fc-meter-req { background: repeating-linear-gradient(45deg, var(--bar-over) 0 3px, #f3a7a3 3px 6px); }
+.fc-explain { font-weight: 600; color: var(--text); }
+.fc-OVER .fc-explain { color: var(--over); }
+.fc-NEAR .fc-explain { color: var(--warn); }
+.fc-block { color: var(--over); font-weight: 600; }
+
+/* routing preview */
+.route-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.route-list li { display: flex; gap: 10px; align-items: flex-start; }
+.route-seq { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--brand-50); color: var(--brand); font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.route-list li.is-skipped { opacity: .6; }
+.route-list li.is-skipped b { text-decoration: line-through; }
+
+/* attachments */
+.att-list { list-style: none; margin: 0; padding: 0; }
+.att-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+.att-list li:first-child { border-top: 0; }
+.att-name { display: grid; min-width: 0; }
+.att-name b { overflow-wrap: anywhere; }
+
+/* actuals */
+.actuals-table .cell { min-width: 110px; }
+.actuals-table .ro-cell { color: var(--text2); background: var(--subtle); }
+.import-row { align-items: flex-end; margin: 10px 0 4px; }
+.import-row .field { flex: 1; min-width: 220px; }
