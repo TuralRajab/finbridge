@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { APPROVER_TYPES, CONDITION_FIELDS, CONDITION_OPS, TASK_ACTIONS, WORKFLOW_TYPES, can, type Condition, type DelegationDto, type RuleContext } from '@finbridge/shared';
+import { APPROVER_TYPES, CONDITION_FIELDS, CONDITION_OPS, TASK_ACTIONS, VERSION_KINDS, WORKFLOW_TYPES, can, type Condition, type DelegationDto, type RuleContext } from '@finbridge/shared';
 import { all, get, run } from '../db/database';
 import { companyIdOf, currentUser, requirePermission } from '../auth/middleware';
 import { audit } from '../lib/audit';
@@ -88,11 +88,12 @@ workflowsRouter.post('/preview', requirePermission('masterdata.view'), (req, res
     workflowType: z.enum(WORKFLOW_TYPES), definitionId: z.number().int().positive().optional(),
     amount: z.number().default(0), costCenterId: z.number().int().positive().optional(), orgUnitId: z.number().int().positive().optional(),
     accountId: z.number().int().positive().optional(), requestType: z.enum(['PURCHASE', 'EXPENSE']).optional(),
+    budgetKind: z.enum(VERSION_KINDS).optional(),
   }).parse(req.body);
   const org = OrgIndex.load(companyId);
   const unitId = b.costCenterId ? org.cc(b.costCenterId).orgUnitId : b.orgUnitId ?? org.root().id;
   const ctx: RuleContext = {
-    ...org.ruleContextForUnit(unitId), amount: b.amount, requestType: b.requestType ?? null,
+    ...org.ruleContextForUnit(unitId), amount: b.amount, requestType: b.requestType ?? null, budgetKind: b.budgetKind ?? null,
     costCenter: b.costCenterId ? [org.cc(b.costCenterId).code] : [],
     ...(b.accountId ? AccountIndex.load(companyId).ruleContext(b.accountId) : {}),
     industry: get<{ industry_code: string | null }>('SELECT industry_code FROM companies WHERE id = ?', companyId)?.industry_code ?? null,
