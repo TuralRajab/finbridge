@@ -1,59 +1,39 @@
 # FinBridge
 
-**Azərbaycan şirkətləri üçün büdcə planlaması, təsdiq və Plan / Fakt platforması.**
-Excel-də aparılan illik büdcə prosesini tamamilə platformaya köçürür: büdcə burada yaradılır,
-departamentlərdən burada toplanır, burada yoxlanılır, CFO tərəfindən burada təsdiqlənir və il ərzində
-faktiki xərclərlə burada müqayisə olunur. Excel yalnız köhnə məlumatı gətirmək (idxal) və hesabatları
-çıxarmaq (ixrac) üçün qalır.
+**Azərbaycan şirkətləri üçün büdcə planlaması, təsdiq axınları və büdcə nəzarəti platforması.**
+Büdcə platformada yaradılır, struktur vahidləri üzrə toplanır, konfiqurasiya olunan çoxmərhələli axınlarla
+təsdiqlənir və kilidlənir. İl ərzində hər satınalma və xərc sorğusu büdcə qalığı ilə yoxlanılır,
+öhdəliklər və faktiki xərclər büdcə istifadəsinə avtomatik yazılır. Excel yalnız köhnə məlumatı
+gətirmək (idxal) və hesabatları çıxarmaq (ixrac) üçün qalır.
 
-> 🇬🇧 *FinBridge is a multi-tenant budgeting module: companies (licences) → users with roles →
-> departments → cost centers → annual budget → Submit / Review / CFO approval → actuals → Plan vs Actual,
-> variance, forecast and a management dashboard. The UI is in Azerbaijani (default) and English.*
+> 🇬🇧 *FinBridge is a multi-tenant FP&A and budget-control platform: configurable organisation hierarchy →
+> cost centers → hierarchical chart of accounts (industry templates) → versioned budgets with locking →
+> configurable approval workflow engine → purchase/expense requests with funds check → commitments and
+> actuals → consumption, variance and drill-down reporting. UI in Azerbaijani (default) and English.*
 
 ---
 
-## Nə edir (MVP)
+## Modullar
 
-| # | Modul | Harada |
-|---|-------|--------|
-| 1 | **Şirkət** və lisenziya (paket, istifadəçi sayı, bitmə tarixi) | Platforma → Şirkətlər; Şirkət və lisenziya |
-| 2 | **Departamentlər** (menecer təyinatı ilə) | Məlumat bazası → Departamentlər |
-| 3 | **Xərc mərkəzləri** (məsul şəxs ilə) | Məlumat bazası → Xərc mərkəzləri |
-| 4 | **Büdcə**: illik, keçən ildən kopyalama və % artım | Büdcələr |
-| 5 | **Excel idxal**: sütunlar avtomatik tanınır, əvvəlcə yoxlanılır (dry-run) | Büdcə → Excel-dən idxal; Faktiki xərclər |
-| 6 | **Büdcənin platformada redaktəsi**: 12 aylıq cədvəl, sətir əlavə etmək və silmək | Büdcə → Büdcə sətirləri |
-| 7 | **Təsdiq**: Təqdim → Yoxlama → Düzəliş tələbi → CFO təsdiqi → Kilid | Büdcə → Departamentlər, Tarixçə |
-| 8 | **Plan / Fakt**: departamentdən xərc mərkəzinə keçid (drill-down), hesab üzrə qruplaşdırma | Plan / Fakt |
-| 9 | **Fərq və Fərq %**: rəng və ▲▼ işarəsi ilə | Hər yerdə |
-| 10 | **İdarəetmə paneli**: KPI, aylıq qrafik, təsdiq vəziyyəti, büdcəni ən çox keçənlər | İdarəetmə paneli |
-| 11 | **Excel ixrac**: bütün cədvəllər (büdcə, Plan / Fakt, fakt, departament, xərc mərkəzi, hesab, istifadəçi) | Hər səhifədə "Excel-ə ixrac" |
-| 12 | **Rollar**: Admin / CFO / Maliyyə / Departament meneceri / Xərc mərkəzi məsulu / Baxış | İstifadəçilər |
-
-Əlavə olaraq: **giriş səhifəsi**, **iki dil** (Azərbaycan dili əsasdır, ingilis dili ikincidir), proqnoz (fakt + qalan büdcə və ya orta aylıq temp),
-hər addımın audit tarixçəsi, lisenziya limitlərinin serverdə yoxlanması.
-
-## Əsas istifadəçi ssenarisi
-
-1. Maliyyə meneceri **2027 büdcəsini yaradır** (boş və ya 2026-dan +5% kopya kimi).
-2. **Departamentləri** əlavə edir.
-3. **Xərc mərkəzlərini** müəyyən edir (və ya Excel idxalı zamanı avtomatik yaradılır).
-4. Keçən ilin **Excel faylını idxal edir**.
-5. **"Departamentlərə göndər"**: hər departament menecerinə büdcə açılır.
-6. Departamentlər **öz büdcələrini doldurur** (hər kəs yalnız öz departamentini və ya xərc mərkəzini görür).
-7. Maliyyə **yoxlayır**.
-8. Lazım olsa **düzəliş tələb edir** (şərh məcburidir).
-9. Departament **yenidən təqdim edir**.
-10. Bütün departamentlər yoxlanıldıqdan sonra **CFO təsdiqləyir**.
-11. Büdcə **kilidlənir**.
-12. İl ərzində **faktiki xərclər** daxil edilir (əl ilə və ya Excel ilə).
-13. Sistem **Plan / Fakt** göstərir.
-14. **Fərqləri** müəyyən edir.
-15. **Proqnoz** yenilənir.
-16. Rəhbərlik nəticələri **idarəetmə panelində** izləyir.
+| Sahə | Nə edir | Harada |
+|------|---------|--------|
+| **Quraşdırma ustası** | Şirkət məlumatı → sənaye → tövsiyə olunan şablon → hesabların nəzərdən keçirilməsi → seçimlər → tətbiq | İdarəetmə → Quraşdırma ustası |
+| **Sənaye şablonları** | 7 şablon (Satış və distribusiya, İstehsal, Sənaye, Kənd təsərrüfatı, Bank, Xidmətlər, Digər), hər birində ~40 real hesab (MUS / AMB hesablar planı əsasında), struktur, xərc mərkəzləri, axınlar, KPI-lar | İdarəetmə → Sənaye şablonları |
+| **Təşkilati struktur** | Konfiqurasiya olunan vahid növləri (icazəli yuxarı növlər), ağac: yaratmaq, redaktə, köçürmək, deaktiv etmək, dövr qadağası; peşə ailələri, vəzifələr | İdarəetmə → Təşkilati struktur |
+| **Xərc mərkəzləri** | Sahib, məsul şəxs, valyuta, qüvvədə olma tarixləri, icazəli hesablar | İdarəetmə → Xərc mərkəzləri |
+| **Hesablar planı** | İyerarxik; qrup / alt hesab, OPEX / CAPEX (irsi), büdcələşdirməyə və sorğulara icazə | İdarəetmə → Hesablar planı |
+| **Büdcələr** | Versiyalar (İlkin / Düzəlişli / Proqnoz), bölmələr (departament və ya filial), 12 aylıq sətirlər, bölmə təqdimatı, versiyanın təsdiqi, kilid, versiyaların müqayisəsi, tarixçə, sütun uyğunlaşdırmalı Excel idxalı | Planlama → Büdcələr |
+| **Büdcə dəyişiklikləri** | Kilidli büdcəyə dəyişiklik sorğusu → təsdiq → yeni versiya; ilkin versiya dəyişməz qalır | Planlama → Büdcə dəyişiklikləri |
+| **Satınalma və xərc sorğuları** | Canlı büdcə yoxlaması (daxilində / limitə yaxın / aşır), valyuta və məzənnə, qoşmalar, təsdiq, faktın (hesab-fakturanın) qeydi | Xərc nəzarəti |
+| **Təsdiq axınları** | Vizual konstruktor: növ, şərtlər (məbləğ, hesab, xərc mərkəzi, departament, OPEX/CAPEX…), mərhələlər, dinamik təsdiqləyənlər, mərhələ şərtləri (hədd), SLA, eskalasiya, prioritet, qüvvədə olma tarixləri, kopyalama, aktiv/deaktiv, marşrut önizləməsi | İdarəetmə → Təsdiq axınları |
+| **Təsdiqlərim** | Mənə təyin olunmuş və mənə ötürülmüş mərhələlər, gecikmələr | İcmal → Təsdiqlərim |
+| **Səlahiyyət ötürmə** | Məzuniyyət dövrü üçün təsdiq hüququnun başqasına verilməsi | İdarəetmə → Səlahiyyət ötürmə |
+| **Hesabatlar** | İdarəetmə paneli; büdcə istifadəsi (Şirkət → Vahid → XM → Hesab → Əməliyyat drill-down); təsdiq axınları hesabatı; dəyişikliklər hesabatı | Hesabatlar |
+| **Təhlükəsizlik və audit** | Rollar + obyekt səviyyəli görünürlük (serverdə), dəyişməz audit jurnalı, idxal tarixçəsi | İdarəetmə → İstifadəçilər və rollar, Audit jurnalı |
 
 Ətraflı: [docs/WORKFLOW.md](docs/WORKFLOW.md) · Rollar: [docs/ROLES.md](docs/ROLES.md) ·
 Arxitektura: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · API: [docs/API.md](docs/API.md) ·
-Fərziyyə (RAT): [docs/RAT.md](docs/RAT.md)
+Məhsul tədqiqatı: [docs/PRODUCT_RESEARCH.md](docs/PRODUCT_RESEARCH.md) · İcra planı: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)
 
 ## Kompüterə heç nə quraşdırmadan (GitHub Codespaces)
 
@@ -65,39 +45,50 @@ Node.js quraşdırmaq mümkün deyilsə (məs. şirkət kompüteri), layihəni b
    (`.devcontainer/devcontainer.json`).
 4. Aşağıdakı **Ports** tabında `4000 (FinBridge)` sətrindəki 🌐 işarəsinə basın — tətbiq yeni tabda açılır.
 
+> Əvvəlki versiyanın bazası varsa (`server/data/finbridge.db`), server başlamayacaq və `npm run db:reset`
+> əmrini işlətməyi xahiş edəcək — v2 sxemi tamamilə yenidir.
+
 ---
 
 ## Tez başlanğıc
 
-Tələb: **Node.js 22.13+**. Verilənlər bazası Node-un daxili SQLite modulu ilə işləyir, ona görə Docker,
-ayrıca verilənlər bazası serveri və ya kompilyasiya lazım deyil.
+Tələb: **Node.js 22.13+**. Verilənlər bazası Node-un daxili SQLite modulu ilə işləyir.
 
 ```bash
 npm install          # bütün paketlər (shared, server, web)
-npm run db:seed      # demo şirkət, istifadəçilər, cari və növbəti il büdcələri
+npm run db:reset     # bazanı yaradır və 3 demo şirkəti yükləyir
 npm run dev          # API: http://localhost:4000  ·  Veb: http://localhost:5173
 ```
 
-Brauzerdə **http://localhost:5173** ünvanını açın və giriş səhifəsindəki demo hesablardan birini seçin.
+### Demo şirkətlər və hesablar
 
-### Demo hesablar
+Bütün demo hesabların şifrəsi: `Demo1234!`
 
-Şirkət: **Xəzər Distribusiya MMC** (Business lisenziyası, 25 istifadəçi). Bütün hesabların şifrəsi: `Demo1234!`
+**1. Xəzər Distribusiya MMC** — tam ssenari (Satış və distribusiya şablonu).
+Cari ilin büdcəsi bölmələr üzrə təqdim olunub, təsdiqlənib və kilidlənib; təsdiqlənmiş dəyişiklik sorğusu
+v2 versiyasını yaradıb (v1 əvəzlənib, dəyişməz saxlanılır); ilin keçmiş ayları üçün fakt Excel-dən gəlib;
+müxtəlif statuslarda satınalma / xərc sorğuları var (təsdiqlənib və bağlanıb, öhdəlik, Maliyyədə, CFO-da
+gözləyən CAPEX, rədd edilib, qaralama, USD ilə qismən fakturalanmış); növbəti ilin büdcəsi toplanır
+(HR təsdiqlənib, IT təsdiqdə, Satış düzəlişə qaytarılıb, Logistika doldurulur).
 
 | Rol | E-poçt | Nəyi yoxlamaq olar |
 |-----|--------|--------------------|
-| Maliyyə meneceri | `finance@demo.az` | Büdcə yaratmaq, göndərmək, yoxlamaq, fakt daxil etmək, idxal |
-| CFO | `cfo@demo.az` | Bütün şirkətə baxış, təsdiq və ya geri qaytarma |
-| Departament meneceri (Satış) | `sales.manager@demo.az` | Yalnız Satış; düzəliş tələbinə cavab vermək, təqdim etmək |
-| Digər departament menecerləri | `hr.manager@`, `it.manager@`, `ops.manager@`, `marketing.manager@demo.az` | Öz departamenti |
-| Xərc mərkəzi məsulu | `field.sales@demo.az` | Yalnız SAL-01 xərc mərkəzi |
-| Baxış hüququ | `viewer@demo.az` | Yalnız baxış və ixrac |
-| Administrator | `admin@demo.az` | İstifadəçilər, rollar, şirkət məlumatları |
-| Platforma administratoru | `owner@finbridge.az` / `Admin1234!` | Şirkətlər və lisenziyalar |
+| Maliyyə meneceri | `finance@demo.az` | Büdcə, bölmələrin təsdiqi, fakt, idxal, axın konstruktoru |
+| CFO | `cfo@demo.az` | Təsdiqlər (CAPEX sorğusu gözləyir), bütün hesabatlar |
+| CEO | `ceo@demo.az` | Böyük məbləğli təsdiqlər, panel |
+| Departament rəhbəri (Satış) | `sales.manager@demo.az` | Yalnız Satış; qaytarılmış bölməni düzəldib yenidən təqdim etmək |
+| Digər rəhbərlər | `marketing.manager@`, `ops.manager@`, `hr.manager@`, `it.manager@demo.az` | Öz vahidi |
+| XM sahibi / məsulu | `field.sales@demo.az`, `hr.bp@demo.az`, `people.director@demo.az` | Öz xərc mərkəzləri; HR peşə ailəsi sahibi |
+| Əməkdaş | `employee@demo.az` | Yalnız öz sorğuları (xərc / satınalma) |
+| Baxış | `viewer@demo.az` | Yalnız baxış və ixrac |
+| Administrator | `admin@demo.az` | İstifadəçilər, şirkət, bütün ayarlar |
 
-Demo məlumatda 5 departament (HR, IT, Satış, Əməliyyatlar, Marketinq), 15 xərc mərkəzi və 14 hesab var.
-**Cari ilin** büdcəsi kilidlənib və Yanvar–Avqust faktı daxil edilib (Satış və HR büdcəni keçir, IT qənaət edir).
-**Növbəti ilin** büdcəsi departamentlərdədir: hər departament fərqli mərhələdədir, Satışa düzəliş tələbi göndərilib.
+**2. Qafqaz Qida İstehsalat ASC** — İstehsal şablonu, növbəti ilin büdcəsi qaralamadadır:
+`admin@qafqazqida.az`, `ceo@`, `cfo@`, `finance@`, `production@qafqazqida.az`.
+
+**3. Yeni Şirkət MMC** — quraşdırılmayıb; `setup@demo.az` ilə daxil olub quraşdırma ustasını keçin.
+
+**Platforma operatoru:** `owner@finbridge.az` / `Admin1234!` — şirkətlər və lisenziyalar.
 
 ## Skriptlər
 
@@ -107,7 +98,7 @@ Demo məlumatda 5 departament (HR, IT, Satış, Əməliyyatlar, Marketinq), 15 x
 | `npm run db:seed` | Boş bazaya demo məlumat yükləyir |
 | `npm run db:reset` | Bazanı silir və demo məlumatı yenidən yükləyir |
 | `npm run typecheck` | Bütün paketlər üçün TypeScript yoxlaması |
-| `npm test` | Server testləri (hesablamalar, rollar, təsdiq axını, Excel, lisenziya) |
+| `npm test` | Server testləri: qaydalar mühərriki, büdcə yoxlaması, şablonlar, Excel və 24 qəbul ssenarisi (real API üzərindən) |
 | `npm run build` | Veb tətbiqin production build-i (`web/dist`) |
 | `npm start` | API-ni və build olunmuş veb tətbiqi bir portda işə salır (`http://localhost:4000`) |
 | `npm run check` | typecheck + test + build (CI ilə eyni) |
@@ -120,37 +111,30 @@ npm ci && npm run build
 NODE_ENV=production npm start
 ```
 
-Server `web/dist` qovluğunu özü paylayır, ayrıca veb server lazım deyil. SQLite faylı `server/data/`
-qovluğundadır, onu ehtiyat nüsxəyə daxil edin. Çox şirkətli real istifadə üçün PostgreSQL-ə keçid
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) sənədində təsvir olunub.
+Server `web/dist` qovluğunu özü paylayır. SQLite faylı `server/data/` qovluğundadır, onu ehtiyat nüsxəyə
+daxil edin. Böyük həcm üçün PostgreSQL-ə keçid [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) sənədində təsvir olunub.
 
 ## Layihənin quruluşu
 
 ```
 finbridge/
-├─ shared/            # server və veb üçün ortaq TypeScript: rollar, icazələr, təsdiq axını, hesablamalar, DTO-lar
+├─ shared/            # ortaq TypeScript: rollar, icazələr, statuslar, qaydalar mühərriki, hesablamalar, DTO-lar
 ├─ server/            # Express 5 API + node:sqlite
 │  ├─ src/
-│  │  ├─ db/          # bağlantı, SQL miqrasiyaları, demo seed
-│  │  ├─ auth/        # JWT, şifrə, middleware (lisenziya yoxlaması daxil)
-│  │  ├─ lib/         # xətalar, lisenziya, görünürlük (scope)
-│  │  ├─ services/    # büdcə, təsdiq axını, hesabatlar, Excel
-│  │  └─ routes/      # REST endpoint-lər
+│  │  ├─ db/          # bağlantı, SQL sxemi (triggerlər daxil), demo seed
+│  │  ├─ templates/   # sənaye şablonları (hesablar, struktur, axınlar, KPI)
+│  │  ├─ services/    # struktur, hesablar, büdcə, axın mühərriki, sorğular, istifadə, hesabatlar, Excel
+│  │  ├─ routes/      # REST endpoint-lər
+│  │  └─ lib/         # xətalar, scope, audit, saat, lisenziya
 │  └─ test/           # node:test testləri
-├─ web/               # React 18 + Vite SPA
-│  └─ src/
-│     ├─ i18n/        # az.ts (əsas) və en.ts
-│     ├─ components/  # layout, UI, qrafik, idxal dialoqu, CRUD səhifəsi
-│     └─ pages/       # giriş, panel, büdcələr, Plan / Fakt, fakt, məlumat bazası, istifadəçilər, şirkət, platforma
-├─ docs/              # arxitektura, rollar, təsdiq axını, API, RAT
+├─ web/               # React 18 + Vite SPA (az / en)
+├─ docs/              # tədqiqat, plan, arxitektura, rollar, axınlar, API
 ├─ scripts/           # dev və reset skriptləri
-└─ prototype/         # ilk klikləmə prototipi (tarixçə üçün saxlanılıb)
+└─ prototype/         # ilk klikləmə prototipi (tarixçə üçün)
 ```
 
 ## Lisenziya məntiqi
 
-- **Lisenziya şirkətə verilir.** Hər şirkət ayrıca tenant-dır; bütün məlumatlar `company_id` ilə ayrılır.
+- **Lisenziya şirkətə verilir.** Hər şirkət ayrıca tenant-dır; bütün məlumatlar `company_id` ilə ayrılır və hər sorğuda serverdə yoxlanılır.
 - Lisenziyada **paket** (Pilot / Business / Enterprise), **maksimum aktiv istifadəçi sayı** və **bitmə tarixi** var.
-- Limit dolduqda yeni istifadəçi yaratmaq və ya deaktiv istifadəçini aktivləşdirmək serverdə bloklanır.
-- Lisenziya bitdikdə və ya dayandırıldıqda şirkətin istifadəçiləri daxil ola bilmir, açıq sessiyalar da dayanır.
-- Şirkətləri və lisenziyaları **platforma administratoru** idarə edir; şirkətin ilk administratoru şirkətlə birlikdə yaradılır.
+- Limit dolduqda yeni istifadəçi yaratmaq bloklanır; lisenziya bitdikdə və ya dayandırıldıqda şirkətin istifadəçiləri daxil ola bilmir.

@@ -338,3 +338,29 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .page-actions .input { width: auto; min-width: 110px; }
 .grid-table td:nth-child(2), .grid-table th:nth-child(2) { min-width: 190px; }
 .sidebar { align-self: start; min-height: 100vh; }
+
+/* ---- v2 shared additions ---- */
+.badge-muted { background: #f2f4f7; color: var(--muted); border-color: var(--border); text-decoration: none; }
+.nav-count { margin-left: auto; min-width: 20px; padding: 0 6px; border-radius: 10px; background: #d23f39; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.cbar { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+.cbar-track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; display: flex; }
+.cbar-actual { background: var(--bar-actual); height: 100%; }
+.cbar-committed { height: 100%; background: repeating-linear-gradient(45deg, #6d9be6 0 3px, #a9c3f0 3px 6px); }
+.cbar-pending { height: 100%; background: repeating-linear-gradient(45deg, #f0b44c 0 3px, #f9d59b 3px 6px); }
+.cbar-over .cbar-track { box-shadow: inset 0 0 0 1px var(--over); }
+.cbar-over .cbar-label { color: var(--over); font-weight: 600; }
+.cbar-label { font-variant-numeric: tabular-nums; font-size: 12px; min-width: 44px; text-align: right; color: var(--text2); }
+.wf { display: grid; gap: 12px; }
+.wf-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.wf-step { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--grid); align-items: start; }
+.wf-step:last-child { border-bottom: 0; }
+.wf-dot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: #f2f4f7; color: var(--muted); border: 1px solid var(--border); }
+.wf-step.is-PENDING .wf-dot { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-border); }
+.wf-step.is-APPROVED .wf-dot { background: var(--under-bg); color: var(--under); border-color: var(--under-border); }
+.wf-step.is-REJECTED .wf-dot, .wf-step.is-RETURNED .wf-dot { background: var(--over-bg); color: var(--over); border-color: var(--over-border); }
+.wf-meta { color: var(--muted); font-size: 12px; }
+.wf-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.wf-history { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.wf-history li { padding: 6px 0; border-bottom: 1px dashed var(--grid); }
+.wf-history li:last-child { border-bottom: 0; }
+.setup-banner { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 10px 16px; background: var(--warn-bg); border-bottom: 1px solid var(--warn-border); color: var(--warn); }

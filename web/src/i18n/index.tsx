@@ -57,3 +57,19 @@ export function useI18n(): I18nValue {
   if (!v) throw new Error('useI18n must be used inside I18nProvider');
   return v;
 }
+
+/**
+ * Page-local texts: `const L = useLocal(TEXT)` where `TEXT = { az: {...}, en: {...} }`.
+ * Declare `en` with the type of `az` (`const TEXT: Bilingual<typeof az> = ...`) so both stay in sync.
+ */
+export type Bilingual<T> = { az: T; en: T };
+export function useLocal<T>(texts: Bilingual<T>): T {
+  return texts[useI18n().lang];
+}
+
+/** Replaces {name} placeholders. */
+export function fmt(s: string, params: Record<string, string | number>): string {
+  let out = s;
+  for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{${k}}`, String(v));
+  return out;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
-import { varianceState, type BudgetStatus, type DeptStatus, type ErrorCode } from '@finbridge/shared';
+import { varianceState, type BudgetCheckState, type ErrorCode, type InstanceStatus, type RequestStatus, type SectionStatus, type TaskStatus, type VersionStatus } from '@finbridge/shared';
 import { ApiError, download } from '../api/client';
 import { useI18n, type TKey } from '../i18n';
 import { pct, signedMoney } from '../lib/format';
@@ -154,17 +154,62 @@ export function ActionDialog({ title, hint, commentRequired, confirmLabel, dange
 
 /* ------------------------------------------------------------------ domain */
 
-const BUDGET_TONE: Record<BudgetStatus, string> = { DRAFT: 'neutral', COLLECTING: 'info', CFO_REVIEW: 'warning', APPROVED: 'success', LOCKED: 'dark' };
-const DEPT_TONE: Record<DeptStatus, string> = { NOT_STARTED: 'neutral', IN_PROGRESS: 'info', SUBMITTED: 'warning', CHANGES_REQUESTED: 'danger', REVIEWED: 'success' };
+const VERSION_TONE: Record<VersionStatus, string> = { DRAFT: 'neutral', IN_APPROVAL: 'warning', APPROVED: 'success', LOCKED: 'dark', SUPERSEDED: 'muted' };
+const SECTION_TONE: Record<SectionStatus, string> = { NOT_STARTED: 'neutral', IN_PROGRESS: 'info', IN_APPROVAL: 'warning', RETURNED: 'danger', APPROVED: 'success' };
+const REQUEST_TONE: Record<RequestStatus, string> = { DRAFT: 'neutral', IN_APPROVAL: 'warning', APPROVED: 'success', REJECTED: 'danger', RETURNED: 'danger', CANCELLED: 'muted', CLOSED: 'dark' };
+const INSTANCE_TONE: Record<InstanceStatus, string> = { IN_REVIEW: 'warning', APPROVED: 'success', REJECTED: 'danger', RETURNED: 'danger', CANCELLED: 'muted', EXPIRED: 'muted' };
+const TASK_TONE: Record<TaskStatus, string> = { PENDING: 'warning', APPROVED: 'success', REJECTED: 'danger', RETURNED: 'danger', SKIPPED: 'muted', CANCELLED: 'muted' };
+const CHECK_TONE: Record<BudgetCheckState, string> = { WITHIN: 'success', NEAR: 'warning', OVER: 'danger' };
 
-export function BudgetStatusBadge({ status }: { status: BudgetStatus }) {
+export function VersionStatusBadge({ status }: { status: VersionStatus }) {
   const { t } = useI18n();
-  return <span className={`badge badge-${BUDGET_TONE[status]}`}>{t(`budgetStatus.${status}`)}</span>;
+  return <span className={`badge badge-${VERSION_TONE[status]}`}>{t(`versionStatus.${status}`)}</span>;
 }
 
-export function DeptStatusBadge({ status }: { status: DeptStatus }) {
+export function SectionStatusBadge({ status }: { status: SectionStatus }) {
   const { t } = useI18n();
-  return <span className={`badge badge-${DEPT_TONE[status]}`}>{t(`deptStatus.${status}`)}</span>;
+  return <span className={`badge badge-${SECTION_TONE[status]}`}>{t(`sectionStatus.${status}`)}</span>;
+}
+
+export function RequestStatusBadge({ status }: { status: RequestStatus }) {
+  const { t } = useI18n();
+  return <span className={`badge badge-${REQUEST_TONE[status]}`}>{t(`requestStatus.${status}`)}</span>;
+}
+
+export function InstanceStatusBadge({ status }: { status: InstanceStatus }) {
+  const { t } = useI18n();
+  return <span className={`badge badge-${INSTANCE_TONE[status]}`}>{t(`instanceStatus.${status}`)}</span>;
+}
+
+export function TaskStatusBadge({ status }: { status: TaskStatus }) {
+  const { t } = useI18n();
+  return <span className={`badge badge-${TASK_TONE[status]}`}>{t(`taskStatus.${status}`)}</span>;
+}
+
+/** Funds-check state; icon + text, never colour alone. */
+export function BudgetCheckBadge({ state }: { state: BudgetCheckState | null | undefined }) {
+  const { t } = useI18n();
+  if (!state) return <span className="muted">—</span>;
+  const icon = state === 'OVER' ? '▲' : state === 'NEAR' ? '!' : '✓';
+  return <span className={`badge badge-${CHECK_TONE[state]}`}><span aria-hidden="true">{icon}</span> {t(`budgetCheck.${state}`)}</span>;
+}
+
+/** Consumption bar: actual (solid) + committed (hatched) against 100 % budget. */
+export function ConsumptionBar({ actual, committed, budget, pending = 0 }: { actual: number; committed: number; budget: number; pending?: number }) {
+  const { locale } = useI18n();
+  const pctOf = (v: number) => (budget > 0 ? Math.max(0, (v / budget) * 100) : 0);
+  const used = pctOf(actual + committed + pending);
+  const over = used > 100;
+  return (
+    <div className={`cbar${over ? ' cbar-over' : ''}`} title={`${pct(used, locale, false)}`}>
+      <div className="cbar-track">
+        <span className="cbar-actual" style={{ width: `${Math.min(100, pctOf(actual))}%` }} />
+        <span className="cbar-committed" style={{ width: `${Math.min(100 - Math.min(100, pctOf(actual)), pctOf(committed))}%` }} />
+        {pending > 0 && <span className="cbar-pending" style={{ width: `${Math.max(0, Math.min(100 - pctOf(actual + committed), pctOf(pending)))}%` }} />}
+      </div>
+      <span className="cbar-label">{pct(used, locale, false)}</span>
+    </div>
+  );
 }
 
 export function Badge({ tone = 'neutral', children }: { tone?: string; children: ReactNode }) {
@@ -248,6 +293,24 @@ const PATHS: Record<string, string> = {
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   globe: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20',
   lock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
+  inbox: 'M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z',
+  workflow: 'M5 4h6v6H5zM13 14h6v6h-6zM8 10v4a2 2 0 0 0 2 2h3',
+  request: 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4',
+  change: 'M4 7h13l-3-3M20 17H7l3 3',
+  report: 'M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3',
+  org: 'M10 3h4v4h-4zM4 17h4v4H4zM16 17h4v4h-4zM12 7v5M6 17v-3h12v3',
+  template: 'M4 4h16v5H4zM4 13h7v7H4zM15 13h5v7h-5z',
+  settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+  audit: 'M9 12l2 2 4-4M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z',
+  delegate: 'M17 8l4 4-4 4M21 12H9M9 4H5v16h4',
+  wand: 'M15 4V2M15 10V8M11 6h2M17 6h2M4 20l11-11',
+  up: 'M12 19V5M5 12l7-7 7 7',
+  down: 'M12 5v14M19 12l-7 7-7-7',
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
+  history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
+  compare: 'M8 3v18M16 3v18M3 8h5M16 16h5',
+  x: 'M6 6l12 12M18 6L6 18',
+  alert: 'M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0',
 };
 
 export function Icon({ name, size = 16 }: { name: keyof typeof PATHS | string; size?: number }) {

@@ -13,7 +13,7 @@ export function useYear() {
   const [years, setYears] = useState<number[]>([current]);
   useEffect(() => {
     api<BudgetDto[]>('GET', '/budgets')
-      .then((b) => setYears([...new Set([current, ...b.map((x) => x.year)])].sort((a, c) => c - a)))
+      .then((b) => setYears([...new Set([current, ...b.map((x) => x.fiscalYear)])].sort((a, c) => c - a)))
       .catch(() => undefined);
   }, [current]);
   const setYear = (y: number) => {
