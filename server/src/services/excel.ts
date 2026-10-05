@@ -108,7 +108,17 @@ export async function parseSheet(buffer: Buffer, mapping?: ColumnMapping): Promi
     });
     if (known >= 2) { headerRow = r; detected = cols; }
   }
-  if (!headerRow) throw badRequest('IMPORT_FAILED', 'Could not find a header row with known column names');
+  if (!headerRow) {
+    // Unknown headers: fall back to the first non-empty row so the user can map the columns by hand.
+    for (let r = 1; r <= Math.min(ws.rowCount, 15) && !headerRow; r++) {
+      const cols: ImportColumn[] = [];
+      ws.getRow(r).eachCell({ includeEmpty: false }, (cell, col) => { cols.push({ index: col, header: String(cellValue(cell.value) ?? ''), field: null }); });
+      if (cols.length >= 2) { headerRow = r; detected = cols; }
+    }
+    if (!headerRow || !mapping) {
+      throw badRequest('IMPORT_FAILED', 'Could not find a header row with known column names', headerRow ? { columns: detected, needsMapping: true } : undefined);
+    }
+  }
   const columns = detected.map((c) => (mapping && String(c.index) in mapping ? { ...c, field: mapping[String(c.index)] || null } : c));
   const fields: Partial<Record<ImportField, number>> = {};
   const months = new Map<number, number>();
