@@ -61,3 +61,61 @@ export function forecastFullYear(
 export function applyUplift(months: readonly number[], pct: number): number[] {
   return months.map((m) => roundMoney(m * (1 + pct / 100)));
 }
+
+/* ------------------------------------------------------------------ budget consumption */
+
+/** Amounts for one slice (cost center × account × period), all in base currency. */
+export interface ConsumptionInput {
+  budget: number;
+  actual: number;
+  /** Approved requests not yet turned into actuals. */
+  committed: number;
+  /** Requests still in approval. */
+  pending: number;
+}
+
+export interface ConsumptionResult extends ConsumptionInput {
+  available: number;
+  variance: number;
+  variancePct: number | null;
+  /** (actual + committed) / budget × 100 */
+  consumptionPct: number | null;
+}
+
+export function consumption(i: ConsumptionInput, includePending = true): ConsumptionResult {
+  const available = roundMoney(i.budget - i.actual - i.committed - (includePending ? i.pending : 0));
+  const { variance, variancePct } = computeVariance(i.budget, i.actual);
+  const consumptionPct = i.budget === 0 ? null : Math.round(((i.actual + i.committed) / i.budget) * 1000) / 10;
+  return { ...i, available, variance, variancePct, consumptionPct };
+}
+
+export interface BudgetCheckResult {
+  state: 'WITHIN' | 'NEAR' | 'OVER';
+  budget: number;
+  used: number;
+  available: number;
+  requested: number;
+  availableAfter: number;
+  usagePctAfter: number | null;
+}
+
+/**
+ * Funds check for a new request.
+ * `used` = actual + committed (+ pending when configured), excluding the request itself.
+ * OVER when the request exceeds what is available (or nothing is budgeted),
+ * NEAR when usage after the request reaches `nearLimitPct`.
+ */
+export function budgetCheck(budget: number, used: number, requested: number, nearLimitPct = 90): BudgetCheckResult {
+  const available = roundMoney(budget - used);
+  const availableAfter = roundMoney(available - requested);
+  const usagePctAfter = budget > 0 ? Math.round(((used + requested) / budget) * 1000) / 10 : null;
+  let state: BudgetCheckResult['state'] = 'WITHIN';
+  if (budget <= 0 || availableAfter < -0.005) state = 'OVER';
+  else if (usagePctAfter !== null && usagePctAfter >= nearLimitPct) state = 'NEAR';
+  return { state, budget: roundMoney(budget), used: roundMoney(used), available, requested: roundMoney(requested), availableAfter, usagePctAfter };
+}
+
+/** Converts a transaction amount to base currency with `rate` = base units per 1 transaction unit. */
+export function toBase(amount: number, rate: number): number {
+  return roundMoney(amount * rate);
+}

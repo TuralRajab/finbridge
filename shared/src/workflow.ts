@@ -1,76 +1,89 @@
-import type { Permission, Role } from './roles';
-import { can } from './roles';
+/**
+ * Status vocabularies and workflow-engine metadata shared by API and UI.
+ * The approval *chains* are not here: they are configured per company in workflow definitions.
+ */
+
+/* ------------------------------------------------------------------ budget */
+
+export const VERSION_KINDS = ['INITIAL', 'REVISED', 'FORECAST', 'MANAGEMENT'] as const;
+export type VersionKind = (typeof VERSION_KINDS)[number];
 
 /**
- * Budget life cycle
- *
- *   DRAFT ──open──▶ COLLECTING ──submit_to_cfo──▶ CFO_REVIEW ──approve──▶ APPROVED ──lock──▶ LOCKED
- *                        ▲                              │
- *                        └────────────reject────────────┘
- *
- * While COLLECTING, every department runs its own sub-flow:
- *
- *   NOT_STARTED ─edit─▶ IN_PROGRESS ─submit─▶ SUBMITTED ─review─▶ REVIEWED
- *                            ▲                    │                  │
- *                            └── CHANGES_REQUESTED ◀─request_changes─┘
+ * DRAFT → IN_APPROVAL → APPROVED → LOCKED → SUPERSEDED (when a change request creates the next version).
+ * A rejected/returned version goes back to DRAFT. LOCKED and SUPERSEDED are terminal for edits.
  */
-export const BUDGET_STATUSES = ['DRAFT', 'COLLECTING', 'CFO_REVIEW', 'APPROVED', 'LOCKED'] as const;
-export type BudgetStatus = (typeof BUDGET_STATUSES)[number];
+export const VERSION_STATUSES = ['DRAFT', 'IN_APPROVAL', 'APPROVED', 'LOCKED', 'SUPERSEDED'] as const;
+export type VersionStatus = (typeof VERSION_STATUSES)[number];
 
-export const DEPT_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'SUBMITTED', 'CHANGES_REQUESTED', 'REVIEWED'] as const;
-export type DeptStatus = (typeof DEPT_STATUSES)[number];
+/** Per budgeting unit (e.g. department) inside a draft version. */
+export const SECTION_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'IN_APPROVAL', 'RETURNED', 'APPROVED'] as const;
+export type SectionStatus = (typeof SECTION_STATUSES)[number];
+export const SECTION_EDITABLE: readonly SectionStatus[] = ['NOT_STARTED', 'IN_PROGRESS', 'RETURNED'];
 
-export const BUDGET_ACTIONS = ['open', 'submit_to_cfo', 'approve', 'reject', 'lock'] as const;
-export type BudgetAction = (typeof BUDGET_ACTIONS)[number];
+/* ------------------------------------------------------------------ requests */
 
-export const DEPT_ACTIONS = ['submit', 'review', 'request_changes'] as const;
-export type DeptAction = (typeof DEPT_ACTIONS)[number];
+/** Shared by purchase/expense requests and budget change requests. */
+export const REQUEST_STATUSES = ['DRAFT', 'IN_APPROVAL', 'APPROVED', 'REJECTED', 'RETURNED', 'CANCELLED', 'CLOSED'] as const;
+export type RequestStatus = (typeof REQUEST_STATUSES)[number];
+export const REQUEST_EDITABLE: readonly RequestStatus[] = ['DRAFT', 'RETURNED'];
 
-interface Transition<S> {
-  from: readonly S[];
-  to: S;
-  permission: Permission;
-  commentRequired?: boolean;
+export const REQUEST_TYPES = ['PURCHASE', 'EXPENSE'] as const;
+export type RequestType = (typeof REQUEST_TYPES)[number];
+
+export const BUDGET_CHECK_STATES = ['WITHIN', 'NEAR', 'OVER'] as const;
+export type BudgetCheckState = (typeof BUDGET_CHECK_STATES)[number];
+
+/* ------------------------------------------------------------------ workflow engine */
+
+export const WORKFLOW_TYPES = [
+  'BUDGET_SUBMISSION',
+  'BUDGET_APPROVAL',
+  'BUDGET_CHANGE',
+  'PURCHASE_REQUEST',
+  'EXPENSE_REQUEST',
+  'FORECAST_SUBMISSION',
+  'FORECAST_APPROVAL',
+] as const;
+export type WorkflowType = (typeof WORKFLOW_TYPES)[number];
+
+/** Who approves a step. Resolved at run time from the organisation structure. */
+export const APPROVER_TYPES = [
+  'SPECIFIC_USER', // config.userId
+  'ROLE', // config.role — any active user with that role
+  'CEO',
+  'CFO',
+  'FINANCE_MANAGER',
+  'DEPARTMENT_HEAD', // head of nearest ancestor unit of type config.unitTypeCode (default DEPARTMENT)
+  'ORG_UNIT_OWNER', // head of the subject unit (or nearest ancestor with a head)
+  'EXECUTIVE', // head of the top-level unit (below company) the subject belongs to
+  'COST_CENTER_OWNER', // budget owner of the cost center(s)
+  'COST_CENTER_RESPONSIBLE', // responsible person of the cost center(s)
+  'JOB_FAMILY_OWNER', // config.jobFamilyId, else the requester's job family
+  'POSITION_HOLDER', // config.positionId
+  'DYNAMIC_MANAGER', // requester's line manager
+] as const;
+export type ApproverType = (typeof APPROVER_TYPES)[number];
+
+export interface ApproverConfig {
+  userId?: number;
+  role?: string;
+  unitTypeCode?: string;
+  jobFamilyId?: number;
+  /** Alternative to jobFamilyId, used by templates. */
+  jobFamilyCode?: string;
+  positionId?: number;
+  positionCode?: string;
 }
 
-export const BUDGET_TRANSITIONS: Record<BudgetAction, Transition<BudgetStatus>> = {
-  open: { from: ['DRAFT'], to: 'COLLECTING', permission: 'budget.manage' },
-  submit_to_cfo: { from: ['COLLECTING'], to: 'CFO_REVIEW', permission: 'budget.manage' },
-  approve: { from: ['CFO_REVIEW'], to: 'APPROVED', permission: 'budget.approve' },
-  reject: { from: ['CFO_REVIEW'], to: 'COLLECTING', permission: 'budget.approve', commentRequired: true },
-  lock: { from: ['APPROVED'], to: 'LOCKED', permission: 'budget.manage' },
-};
+export const INSTANCE_STATUSES = ['IN_REVIEW', 'APPROVED', 'REJECTED', 'RETURNED', 'CANCELLED', 'EXPIRED'] as const;
+export type InstanceStatus = (typeof INSTANCE_STATUSES)[number];
 
-export const DEPT_TRANSITIONS: Record<DeptAction, Transition<DeptStatus>> = {
-  submit: { from: ['NOT_STARTED', 'IN_PROGRESS', 'CHANGES_REQUESTED'], to: 'SUBMITTED', permission: 'budget.submit' },
-  review: { from: ['SUBMITTED'], to: 'REVIEWED', permission: 'budget.manage' },
-  request_changes: { from: ['SUBMITTED', 'REVIEWED'], to: 'CHANGES_REQUESTED', permission: 'budget.manage', commentRequired: true },
-};
+export const TASK_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'RETURNED', 'SKIPPED', 'CANCELLED'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-export function canRunBudgetAction(role: Role, status: BudgetStatus, action: BudgetAction): boolean {
-  const t = BUDGET_TRANSITIONS[action];
-  return t.from.includes(status) && can(role, t.permission);
-}
+export const TASK_ACTIONS = ['APPROVE', 'REJECT', 'RETURN'] as const;
+export type TaskAction = (typeof TASK_ACTIONS)[number];
 
-export function canRunDeptAction(role: Role, budgetStatus: BudgetStatus, deptStatus: DeptStatus, action: DeptAction): boolean {
-  const t = DEPT_TRANSITIONS[action];
-  return budgetStatus === 'COLLECTING' && t.from.includes(deptStatus) && can(role, t.permission);
-}
-
-/** Department statuses in which the department itself may still change its numbers. */
-export const DEPT_EDITABLE_STATUSES: readonly DeptStatus[] = ['NOT_STARTED', 'IN_PROGRESS', 'CHANGES_REQUESTED'];
-
-/**
- * Whether a user with `role` may edit lines of a department whose sub-flow is in `deptStatus`.
- * Scope (which departments / cost centers the user owns) is checked separately.
- */
-export function canEditBudgetLines(role: Role, budgetStatus: BudgetStatus, deptStatus: DeptStatus | null): boolean {
-  if (!can(role, 'budget.edit')) return false;
-  const isFinance = can(role, 'budget.manage');
-  if (budgetStatus === 'DRAFT') return isFinance;
-  if (budgetStatus === 'COLLECTING') {
-    if (isFinance) return true;
-    return deptStatus !== null && DEPT_EDITABLE_STATUSES.includes(deptStatus);
-  }
-  return false;
-}
+/** Entities a workflow can run on. */
+export const WORKFLOW_ENTITIES = ['BUDGET_SECTION', 'BUDGET_VERSION', 'CHANGE_REQUEST', 'PURCHASE_REQUEST'] as const;
+export type WorkflowEntity = (typeof WORKFLOW_ENTITIES)[number];

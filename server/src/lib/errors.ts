@@ -28,6 +28,18 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
   const msg = String((err as Error)?.message ?? err);
+  if (msg.includes('VERSION_LOCKED')) {
+    res.status(409).json({ error: { code: 'VERSION_LOCKED', message: 'Approved or locked budget data cannot be changed directly. Create a change request.' } });
+    return;
+  }
+  if (msg.includes('APPEND_ONLY')) {
+    res.status(409).json({ error: { code: 'CONFLICT', message: 'Audit history cannot be modified' } });
+    return;
+  }
+  if (err?.type === 'entity.parse.failed') {
+    res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Malformed JSON' } });
+    return;
+  }
   if (msg.includes('UNIQUE constraint failed')) {
     res.status(409).json({ error: { code: 'DUPLICATE_CODE', message: 'A record with this code already exists' } });
     return;

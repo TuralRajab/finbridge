@@ -8,12 +8,14 @@ import { signToken } from '../auth/token';
 import { HttpError } from '../lib/errors';
 import { assertLicense, type CompanyRow } from '../lib/license';
 import { toCompanyDto, toUserDto, type UserRow } from '../lib/mappers';
+import { nowIso } from '../lib/clock';
+import { inbox } from '../services/workflowEngine';
 
 export const authRouter = Router();
 
 function meDto(user: UserRow): MeDto {
   const company = user.company_id ? get<CompanyRow>('SELECT * FROM companies WHERE id = ?', user.company_id) : undefined;
-  return { ...toUserDto(user), permissions: permissionsFor(user.role), company: company ? toCompanyDto(company) : null };
+  return { ...toUserDto(user), permissions: permissionsFor(user.role), company: company ? toCompanyDto(company) : null, pendingTasks: user.company_id ? inbox(user).length : 0 };
 }
 
 const loginSchema = z.object({
@@ -33,7 +35,7 @@ authRouter.post('/login', (req, res) => {
     if (!company) throw new HttpError(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect');
     assertLicense(company);
   }
-  run("UPDATE users SET last_login_at = datetime('now') WHERE id = ?", user.id);
+  run('UPDATE users SET last_login_at = ? WHERE id = ?', nowIso(), user.id);
   res.json({ token: signToken(user.id), user: meDto(user) });
 });
 

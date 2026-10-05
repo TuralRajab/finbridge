@@ -1,21 +1,22 @@
 import type { LicenseDto, LicensePlan } from '@finbridge/shared';
 import { get } from '../db/database';
 import { HttpError } from './errors';
+import { today } from './clock';
 
 export interface CompanyRow {
   id: number;
   name: string;
   tax_id: string | null;
   base_currency: string;
+  industry_code: string | null;
+  default_language: 'az' | 'en';
+  fiscal_year_start_month: number;
+  setup_completed_at: string | null;
   license_plan: LicensePlan;
   license_max_users: number;
   license_valid_until: string;
   status: 'ACTIVE' | 'SUSPENDED';
   created_at: string;
-}
-
-export function today(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 export function isLicenseValid(c: CompanyRow): boolean {

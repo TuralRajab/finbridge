@@ -1,16 +1,20 @@
 /**
  * Roles and permissions.
  *
- * A company (tenant) holds one licence and many users. Every user has exactly one role.
- * SUPER_ADMIN is the FinBridge platform operator and does not belong to a company.
+ * A company (tenant) holds one licence and many users; every user has one role.
+ * Roles grant *capabilities*; *which data* a user sees is decided separately by the
+ * object scope (org subtree, owned cost centers, own requests, assigned approvals).
+ * Approving is never a role permission: it comes from being assigned a workflow task.
  */
 export const ROLES = [
   'SUPER_ADMIN',
   'ADMIN',
+  'CEO',
   'CFO',
   'FINANCE_MANAGER',
   'DEPARTMENT_MANAGER',
   'COST_CENTER_OWNER',
+  'EMPLOYEE',
   'VIEWER',
 ] as const;
 export type Role = (typeof ROLES)[number];
@@ -18,40 +22,46 @@ export type Role = (typeof ROLES)[number];
 export const COMPANY_ROLES = ROLES.filter((r) => r !== 'SUPER_ADMIN') as Exclude<Role, 'SUPER_ADMIN'>[];
 
 export const PERMISSIONS = [
-  'platform.manage', // create companies, manage licences
-  'company.manage', // company profile
-  'users.manage', // invite / deactivate users, assign roles
-  'masterdata.view',
-  'masterdata.manage', // departments, cost centers, accounts
+  'platform.manage', // companies and licences (FinBridge operator)
+  'company.manage', // company profile and budget-control settings
+  'users.manage', // users, roles, delegations of others
+  'org.manage', // org unit types, org tree, cost centers, job families, positions
+  'coa.manage', // chart of accounts, currencies, exchange rates
+  'templates.apply', // industry templates / company setup
+  'workflow.manage', // workflow definitions
+  'masterdata.view', // read structure, accounts, cost centers
   'budget.view',
-  'budget.create',
-  'budget.manage', // send to departments, review, request changes, send to CFO, lock
-  'budget.edit', // edit budget lines inside the user's scope
-  'budget.submit', // submit a department budget to finance
-  'budget.approve', // final approval (CFO)
+  'budget.create', // create budgets and versions
+  'budget.manage', // submit versions, lock, reopen sections, import into budgets
+  'budget.edit', // edit lines inside the user's scope
+  'budget.submit', // submit a budget section into its workflow
+  'request.create', // purchase / expense requests
+  'change.create', // budget change requests on locked budgets
   'actuals.view',
   'actuals.manage',
   'reports.view',
+  'audit.view',
   'excel.import',
   'excel.export',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
+const FINANCE: readonly Permission[] = [
+  'org.manage', 'coa.manage', 'templates.apply', 'workflow.manage', 'masterdata.view',
+  'budget.view', 'budget.create', 'budget.manage', 'budget.edit', 'budget.submit',
+  'request.create', 'change.create', 'actuals.view', 'actuals.manage', 'reports.view', 'audit.view',
+  'excel.import', 'excel.export',
+];
+
 const MATRIX: Record<Role, readonly Permission[]> = {
   SUPER_ADMIN: ['platform.manage'],
-  ADMIN: [
-    'company.manage', 'users.manage', 'masterdata.view', 'masterdata.manage',
-    'budget.view', 'budget.create', 'budget.manage', 'budget.edit', 'budget.submit',
-    'actuals.view', 'actuals.manage', 'reports.view', 'excel.import', 'excel.export',
-  ],
-  CFO: ['masterdata.view', 'budget.view', 'budget.approve', 'actuals.view', 'reports.view', 'excel.export'],
-  FINANCE_MANAGER: [
-    'masterdata.view', 'masterdata.manage', 'budget.view', 'budget.create', 'budget.manage',
-    'budget.edit', 'budget.submit', 'actuals.view', 'actuals.manage', 'reports.view',
-    'excel.import', 'excel.export',
-  ],
-  DEPARTMENT_MANAGER: ['masterdata.view', 'budget.view', 'budget.edit', 'budget.submit', 'actuals.view', 'reports.view', 'excel.export'],
-  COST_CENTER_OWNER: ['masterdata.view', 'budget.view', 'budget.edit', 'actuals.view', 'reports.view', 'excel.export'],
+  ADMIN: ['company.manage', 'users.manage', ...FINANCE],
+  CEO: ['masterdata.view', 'budget.view', 'request.create', 'change.create', 'actuals.view', 'reports.view', 'audit.view', 'excel.export'],
+  CFO: ['masterdata.view', 'budget.view', 'request.create', 'change.create', 'actuals.view', 'reports.view', 'audit.view', 'excel.export'],
+  FINANCE_MANAGER: FINANCE,
+  DEPARTMENT_MANAGER: ['masterdata.view', 'budget.view', 'budget.edit', 'budget.submit', 'request.create', 'change.create', 'actuals.view', 'reports.view', 'excel.export'],
+  COST_CENTER_OWNER: ['masterdata.view', 'budget.view', 'budget.edit', 'request.create', 'change.create', 'actuals.view', 'reports.view', 'excel.export'],
+  EMPLOYEE: ['masterdata.view', 'request.create'],
   VIEWER: ['masterdata.view', 'budget.view', 'actuals.view', 'reports.view', 'excel.export'],
 };
 
@@ -63,8 +73,12 @@ export function permissionsFor(role: Role): Permission[] {
   return [...MATRIX[role]];
 }
 
-/** Roles that see the whole company. Everyone else is limited to their departments / cost centers. */
-export const COMPANY_WIDE_ROLES: readonly Role[] = ['ADMIN', 'CFO', 'FINANCE_MANAGER', 'VIEWER'];
+export function permissionMatrix(): Record<Role, Permission[]> {
+  return Object.fromEntries(ROLES.map((r) => [r, permissionsFor(r)])) as Record<Role, Permission[]>;
+}
+
+/** Roles that see all company data. Others are limited by org / cost-center / request scope. */
+export const COMPANY_WIDE_ROLES: readonly Role[] = ['ADMIN', 'CEO', 'CFO', 'FINANCE_MANAGER', 'VIEWER'];
 
 export function hasCompanyWideScope(role: Role): boolean {
   return COMPANY_WIDE_ROLES.includes(role);

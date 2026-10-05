@@ -66,6 +66,9 @@ function migrate(db: DatabaseSync): void {
   const applied = new Set(
     (db.prepare('SELECT version FROM schema_migrations').all() as { version: string }[]).map((r) => r.version),
   );
+  if (applied.has('001_init.sql')) {
+    throw new Error('This database was created by FinBridge v0.1 and is not compatible with the v2 schema. Run "npm run db:reset".');
+  }
   const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
   for (const file of files) {
     if (applied.has(file)) continue;
@@ -73,7 +76,7 @@ function migrate(db: DatabaseSync): void {
     db.exec('BEGIN');
     try {
       db.exec(sql);
-      db.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, datetime('now'))").run(file);
+      db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(file, new Date().toISOString());
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');

@@ -1,170 +1,158 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
-import { MONTH_SHORT, type Lang } from '@finbridge/shared';
+import type { Lang } from '@finbridge/shared';
 import { all } from '../db/database';
 import { companyIdOf, currentUser, requirePermission } from '../auth/middleware';
 import { toId } from '../lib/params';
-import { costCenterFilter, getScope } from '../lib/scope';
 import { listLines, loadBudget, MONTH_COLS } from '../services/budgets';
 import { actualsTemplate, budgetTemplate, buildWorkbook, headers, monthColumns, sendWorkbook } from '../services/excel';
-import { listAccounts, listCostCenters, listDepartments } from './masterdata';
-import { planVsActual } from '../services/reports';
-import { pvaQuery } from './reports';
+import { consumptionReport, changeReport } from '../services/reports';
+import { listAccounts, listCostCenters } from './masterdata';
+import { listUnits } from './org';
+import { listPrs } from '../services/purchaseRequests';
+import { consumptionQuery } from './reports';
+import { costCenterFilter, getScope } from '../lib/scope';
 
-/** Every table in FinBridge can be exported back to Excel. */
+/** Every table in FinBridge can be exported back to Excel (scoped to what the user may see). */
 export const exportsRouter = Router();
 exportsRouter.use(requirePermission('excel.export'));
 
-function langOf(req: Request): Lang {
-  const q = String(req.query.lang ?? '');
-  if (q === 'az' || q === 'en') return q;
-  return currentUser(req).language;
-}
-
+const langOf = (req: Request): Lang => (req.query.lang === 'en' || req.query.lang === 'az' ? req.query.lang : currentUser(req).language);
 const stamp = () => new Date().toISOString().slice(0, 10);
 
 exportsRouter.get('/budget/:id', async (req, res) => {
   const lang = langOf(req);
   const h = headers(lang);
-  const b = loadBudget(companyIdOf(req), toId(req.params.id));
-  const lines = listLines(currentUser(req), b);
-  const rows = lines.map((l) => ({
-    departmentName: l.departmentName, costCenterCode: l.costCenterCode, costCenterName: l.costCenterName,
-    accountCode: l.accountCode, accountName: l.accountName, accountType: l.accountType, description: l.description,
-    ...Object.fromEntries(l.months.map((m, i) => [`m${i + 1}`, m])), total: l.total,
-  }));
-  const totals: Record<string, unknown> = { departmentName: h.total, total: lines.reduce((s, l) => s + l.total, 0) };
+  const budget = loadBudget(companyIdOf(req), toId(req.params.id));
+  const versionId = req.query.versionId ? toId(req.query.versionId) : null;
+  const lines = listLines(currentUser(req), budget, versionId);
+  const totals: Record<string, unknown> = { section: h.total, total: lines.reduce((s, l) => s + l.total, 0) };
   MONTH_COLS.forEach((m, i) => { totals[m] = lines.reduce((s, l) => s + l.months[i], 0); });
-  const buf = await buildWorkbook([{
-    name: `${h.budget} ${b.year}`,
+  sendWorkbook(res, `finbridge-budget-${budget.fiscal_year}-${stamp()}.xlsx`, await buildWorkbook([{
+    name: `${h.budget} ${budget.fiscal_year}`,
     columns: [
-      { header: h.departmentName, key: 'departmentName', width: 18 },
-      { header: h.costCenterCode, key: 'costCenterCode', width: 14 },
-      { header: h.costCenterName, key: 'costCenterName', width: 22 },
-      { header: h.accountCode, key: 'accountCode', width: 12 },
-      { header: h.accountName, key: 'accountName', width: 24 },
-      { header: h.accountType, key: 'accountType', width: 9 },
-      { header: h.description, key: 'description', width: 26 },
-      ...monthColumns(lang),
-      { header: h.total, key: 'total', money: true, width: 15 },
+      { header: h.section, key: 'section', width: 20 }, { header: h.costCenterCode, key: 'costCenterCode', width: 12 }, { header: h.costCenterName, key: 'costCenterName', width: 24 },
+      { header: h.accountCode, key: 'accountCode', width: 10 }, { header: h.accountName, key: 'accountName', width: 30 }, { header: h.expenseClass, key: 'expenseClass', width: 10 },
+      { header: h.description, key: 'description', width: 24 }, ...monthColumns(lang), { header: h.total, key: 'total', money: true, width: 15 },
     ],
-    rows, totals,
-  }]);
-  sendWorkbook(res, `finbridge-budget-${b.year}-${stamp()}.xlsx`, buf);
+    rows: lines.map((l) => ({ section: l.sectionName, costCenterCode: l.costCenterCode, costCenterName: l.costCenterName, accountCode: l.accountCode, accountName: l.accountName, expenseClass: l.expenseClass, description: l.description, ...Object.fromEntries(l.months.map((m, i) => [`m${i + 1}`, m])), total: l.total })),
+    totals,
+  }]));
 });
 
-exportsRouter.get('/plan-vs-actual', async (req, res) => {
+exportsRouter.get('/consumption', async (req, res) => {
   const lang = langOf(req);
   const h = headers(lang);
-  const q = pvaQuery.parse(req.query);
-  const data = planVsActual(companyIdOf(req), getScope(currentUser(req)), q.year, q);
-  const period = data.throughMonth ? `${MONTH_SHORT[lang][0]}–${MONTH_SHORT[lang][data.throughMonth - 1]}` : '—';
-  const nameHeader = q.groupBy === 'department' ? h.departmentName : q.groupBy === 'costCenter' ? h.costCenterName : h.accountName;
-  const buf = await buildWorkbook([{
-    name: `${q.year} ${period}`,
+  const q = consumptionQuery.parse(req.query);
+  const data = consumptionReport(currentUser(req), q);
+  const money = (key: string, header: string) => ({ header, key, money: true, width: 15 });
+  sendWorkbook(res, `finbridge-consumption-${q.year}-${stamp()}.xlsx`, await buildWorkbook([{
+    name: `${q.year}`,
     columns: [
-      { header: h.code, key: 'code', width: 12 },
-      { header: nameHeader, key: 'name', width: 26 },
-      ...(q.groupBy === 'costCenter' ? [{ header: h.departmentName, key: 'parentName', width: 18 }] : []),
-      { header: h.annualBudget, key: 'annualBudget', money: true, width: 15 },
-      { header: `${h.budgetYtd} ${period}`, key: 'budgetYtd', money: true, width: 17 },
-      { header: `${h.actualYtd} ${period}`, key: 'actualYtd', money: true, width: 17 },
-      { header: h.variance, key: 'variance', money: true, width: 14 },
-      { header: h.variancePct, key: 'variancePct', percent: true, width: 10 },
-      { header: h.forecast, key: 'forecast', money: true, width: 15 },
+      { header: h.code, key: 'code', width: 12 }, { header: h.name, key: 'name', width: 30 }, { header: h.section, key: 'parentName', width: 20 },
+      money('annualBudget', h.annualBudget), money('budget', h.budget), money('originalBudget', h.originalBudget), money('pending', h.pending), money('committed', h.committed),
+      money('actual', h.actual), money('available', h.available), money('variance', h.variance), { header: h.variancePct, key: 'variancePct', percent: true, width: 10 },
+      { header: h.consumptionPct, key: 'consumptionPct', percent: true, width: 12 }, money('forecast', h.forecast),
     ],
     rows: data.rows as unknown as Record<string, unknown>[],
     totals: { name: h.total, ...data.totals },
-  }]);
-  sendWorkbook(res, `finbridge-plan-vs-actual-${q.year}-${stamp()}.xlsx`, buf);
+  }]));
 });
 
 exportsRouter.get('/actuals', async (req, res) => {
   const lang = langOf(req);
   const h = headers(lang);
   const { year } = z.object({ year: z.coerce.number().int() }).parse(req.query);
-  const companyId = companyIdOf(req);
-  const f = costCenterFilter(getScope(currentUser(req)), 'c.id');
-  const rows = all<Record<string, unknown> & { month: number; amount: number; key: string }>(
-    `SELECT d.name AS departmentName, c.code AS costCenterCode, c.name AS costCenterName, a.code AS accountCode, a.name AS accountName,
-            x.month, x.amount
-       FROM actuals x JOIN cost_centers c ON c.id = x.cost_center_id JOIN departments d ON d.id = c.department_id JOIN accounts a ON a.id = x.account_id
-      WHERE x.company_id = ? AND x.year = ?${f.sql}
-      ORDER BY d.code, c.code, a.code, x.month`,
-    companyId, year, ...f.params,
+  const f = costCenterFilter(getScope(currentUser(req)), 'x.cost_center_id');
+  const rows = all<{ cc: string; cc_name: string; acc: string; acc_name: string; month: number; amount: number; source: string }>(
+    `SELECT c.code AS cc, c.name AS cc_name, a.code AS acc, a.name AS acc_name, x.month, x.amount, x.source FROM actuals x
+       JOIN cost_centers c ON c.id = x.cost_center_id JOIN accounts a ON a.id = x.account_id WHERE x.company_id = ? AND x.fiscal_year = ?${f.sql} ORDER BY c.code, a.code, x.month`,
+    companyIdOf(req), year, ...f.params,
   );
   const wide = new Map<string, Record<string, unknown>>();
   for (const r of rows) {
-    const key = `${r.costCenterCode}|${r.accountCode}`;
-    const w = wide.get(key) ?? { departmentName: r.departmentName, costCenterCode: r.costCenterCode, costCenterName: r.costCenterName, accountCode: r.accountCode, accountName: r.accountName, total: 0 };
-    w[`m${r.month}`] = r.amount;
+    const k = `${r.cc}|${r.acc}`;
+    const w = wide.get(k) ?? { costCenterCode: r.cc, costCenterName: r.cc_name, accountCode: r.acc, accountName: r.acc_name, total: 0 };
+    w[`m${r.month}`] = Number(w[`m${r.month}`] ?? 0) + r.amount;
     w.total = Number(w.total) + r.amount;
-    wide.set(key, w);
+    wide.set(k, w);
   }
-  const buf = await buildWorkbook([{
-    name: `${lang === 'az' ? 'Fakt' : 'Actuals'} ${year}`,
-    columns: [
-      { header: h.departmentName, key: 'departmentName', width: 18 },
-      { header: h.costCenterCode, key: 'costCenterCode', width: 14 },
-      { header: h.costCenterName, key: 'costCenterName', width: 22 },
-      { header: h.accountCode, key: 'accountCode', width: 12 },
-      { header: h.accountName, key: 'accountName', width: 24 },
-      ...monthColumns(lang),
-      { header: h.total, key: 'total', money: true, width: 15 },
-    ],
+  sendWorkbook(res, `finbridge-actuals-${year}-${stamp()}.xlsx`, await buildWorkbook([{
+    name: `${h.actual} ${year}`,
+    columns: [{ header: h.costCenterCode, key: 'costCenterCode', width: 12 }, { header: h.costCenterName, key: 'costCenterName', width: 24 }, { header: h.accountCode, key: 'accountCode', width: 10 }, { header: h.accountName, key: 'accountName', width: 30 }, ...monthColumns(lang), { header: h.total, key: 'total', money: true, width: 15 }],
     rows: [...wide.values()],
-  }]);
-  sendWorkbook(res, `finbridge-actuals-${year}-${stamp()}.xlsx`, buf);
+  }]));
 });
 
-exportsRouter.get('/departments', async (req, res) => {
+exportsRouter.get('/requests', async (req, res) => {
   const h = headers(langOf(req));
-  const buf = await buildWorkbook([{
-    name: h.departmentName,
-    columns: [{ header: h.code, key: 'code', width: 12 }, { header: h.name, key: 'name', width: 28 }, { header: h.manager, key: 'managerName', width: 24 }, { header: h.active, key: 'active', width: 8 }],
-    rows: listDepartments(companyIdOf(req)).map((d) => ({ ...d, active: d.isActive ? '✓' : '' })),
-  }]);
-  sendWorkbook(res, `finbridge-departments-${stamp()}.xlsx`, buf);
+  const { year } = z.object({ year: z.coerce.number().int().optional() }).parse(req.query);
+  const rows = listPrs(currentUser(req), { year });
+  sendWorkbook(res, `finbridge-requests-${stamp()}.xlsx`, await buildWorkbook([{
+    name: 'PR',
+    columns: [
+      { header: '#', key: 'number', width: 16 }, { header: h.name, key: 'title', width: 30 }, { header: h.costCenterCode, key: 'costCenterCode', width: 12 },
+      { header: h.accountCode, key: 'accountCode', width: 10 }, { header: h.month, key: 'month', width: 6 }, { header: h.amount, key: 'amount', money: true },
+      { header: 'CCY', key: 'currency', width: 6 }, { header: `${h.amount} (base)`, key: 'amountBase', money: true }, { header: h.status, key: 'status', width: 14 },
+      { header: h.fullName, key: 'requestedBy', width: 22 },
+    ],
+    rows: rows as unknown as Record<string, unknown>[],
+  }]));
+});
+
+exportsRouter.get('/changes', async (req, res) => {
+  const h = headers(langOf(req));
+  const { year } = z.object({ year: z.coerce.number().int() }).parse(req.query);
+  sendWorkbook(res, `finbridge-budget-changes-${year}-${stamp()}.xlsx`, await buildWorkbook([{
+    name: 'BCR',
+    columns: [
+      { header: '#', key: 'number', width: 16 }, { header: h.costCenterName, key: 'costCenter', width: 26 }, { header: h.name, key: 'title', width: 30 },
+      { header: h.description, key: 'reason', width: 40 }, { header: h.originalBudget, key: 'original', money: true }, { header: h.variance, key: 'change', money: true },
+      { header: h.budget, key: 'revised', money: true }, { header: h.status, key: 'status', width: 14 }, { header: h.fullName, key: 'requestedBy', width: 22 },
+    ],
+    rows: changeReport(currentUser(req), year) as unknown as Record<string, unknown>[],
+  }]));
+});
+
+exportsRouter.get('/org-units', async (req, res) => {
+  const h = headers(langOf(req));
+  sendWorkbook(res, `finbridge-org-structure-${stamp()}.xlsx`, await buildWorkbook([{
+    name: h.orgUnit,
+    columns: [{ header: h.code, key: 'code', width: 12 }, { header: h.name, key: 'name', width: 30 }, { header: 'Type', key: 'typeName', width: 16 }, { header: 'Path', key: 'pathText', width: 50 }, { header: h.manager, key: 'headName', width: 22 }, { header: h.active, key: 'active', width: 8 }],
+    rows: listUnits(companyIdOf(req)).map((u) => ({ ...u, pathText: u.path.join(' › '), active: u.isActive ? '✓' : '' })),
+  }]));
 });
 
 exportsRouter.get('/cost-centers', async (req, res) => {
   const h = headers(langOf(req));
-  const buf = await buildWorkbook([{
+  sendWorkbook(res, `finbridge-cost-centers-${stamp()}.xlsx`, await buildWorkbook([{
     name: h.costCenterName,
-    columns: [
-      { header: h.code, key: 'code', width: 12 }, { header: h.name, key: 'name', width: 28 },
-      { header: h.departmentName, key: 'departmentName', width: 20 }, { header: h.owner, key: 'ownerName', width: 24 }, { header: h.active, key: 'active', width: 8 },
-    ],
+    columns: [{ header: h.code, key: 'code', width: 12 }, { header: h.name, key: 'name', width: 28 }, { header: h.orgUnit, key: 'orgUnitName', width: 22 }, { header: h.section, key: 'sectionName', width: 20 }, { header: h.owner, key: 'ownerName', width: 22 }, { header: h.manager, key: 'responsibleName', width: 22 }, { header: 'CCY', key: 'currency', width: 6 }, { header: h.active, key: 'active', width: 8 }],
     rows: listCostCenters(companyIdOf(req)).map((c) => ({ ...c, active: c.isActive ? '✓' : '' })),
-  }]);
-  sendWorkbook(res, `finbridge-cost-centers-${stamp()}.xlsx`, buf);
+  }]));
 });
 
 exportsRouter.get('/accounts', async (req, res) => {
   const h = headers(langOf(req));
-  const buf = await buildWorkbook([{
+  const accs = listAccounts(companyIdOf(req));
+  const byId = new Map(accs.map((a) => [a.id, a.code]));
+  sendWorkbook(res, `finbridge-chart-of-accounts-${stamp()}.xlsx`, await buildWorkbook([{
     name: h.accountName,
-    columns: [{ header: h.code, key: 'code', width: 12 }, { header: h.name, key: 'name', width: 30 }, { header: h.accountType, key: 'type', width: 10 }, { header: h.active, key: 'active', width: 8 }],
-    rows: listAccounts(companyIdOf(req)).map((a) => ({ ...a, active: a.isActive ? '✓' : '' })),
-  }]);
-  sendWorkbook(res, `finbridge-accounts-${stamp()}.xlsx`, buf);
+    columns: [{ header: h.code, key: 'code', width: 12 }, { header: h.parentCode, key: 'parent', width: 12 }, { header: h.name, key: 'indented', width: 44 }, { header: h.accountType, key: 'accountType', width: 10 }, { header: h.expenseClass, key: 'expenseClass', width: 10 }, { header: h.category, key: 'category', width: 18 }, { header: h.active, key: 'active', width: 8 }],
+    rows: accs.map((a) => ({ ...a, parent: a.parentId ? byId.get(a.parentId) : '', indented: `${'  '.repeat(a.level)}${a.name}`, active: a.isActive ? '✓' : '' })),
+  }]));
 });
 
 exportsRouter.get('/users', requirePermission('users.manage'), async (req, res) => {
   const h = headers(langOf(req));
-  const rows = all<{ full_name: string; email: string; role: string; is_active: number; dept: string | null }>(
-    'SELECT u.full_name, u.email, u.role, u.is_active, d.name AS dept FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.company_id = ? ORDER BY u.full_name',
-    companyIdOf(req),
+  const rows = all<{ full_name: string; email: string; role: string; is_active: number; unit: string | null; job_title: string | null }>(
+    'SELECT u.full_name, u.email, u.role, u.is_active, o.name AS unit, u.job_title FROM users u LEFT JOIN org_units o ON o.id = u.org_unit_id WHERE u.company_id = ? ORDER BY u.full_name', companyIdOf(req),
   );
-  const buf = await buildWorkbook([{
+  sendWorkbook(res, `finbridge-users-${stamp()}.xlsx`, await buildWorkbook([{
     name: 'Users',
-    columns: [
-      { header: h.fullName, key: 'full_name', width: 24 }, { header: h.email, key: 'email', width: 28 },
-      { header: h.role, key: 'role', width: 20 }, { header: h.departmentName, key: 'dept', width: 18 }, { header: h.active, key: 'active', width: 8 },
-    ],
+    columns: [{ header: h.fullName, key: 'full_name', width: 24 }, { header: h.email, key: 'email', width: 28 }, { header: h.role, key: 'role', width: 20 }, { header: h.orgUnit, key: 'unit', width: 22 }, { header: 'Title', key: 'job_title', width: 22 }, { header: h.active, key: 'active', width: 8 }],
     rows: rows.map((r) => ({ ...r, active: r.is_active ? '✓' : '' })),
-  }]);
-  sendWorkbook(res, `finbridge-users-${stamp()}.xlsx`, buf);
+  }]));
 });
 
 exportsRouter.get('/templates/budget', requirePermission('excel.import'), async (req, res) => {
@@ -172,5 +160,6 @@ exportsRouter.get('/templates/budget', requirePermission('excel.import'), async 
 });
 
 exportsRouter.get('/templates/actuals', requirePermission('excel.import'), async (req, res) => {
-  sendWorkbook(res, 'finbridge-actuals-template.xlsx', await actualsTemplate(companyIdOf(req), langOf(req)));
+  const { year } = z.object({ year: z.coerce.number().int().default(new Date().getFullYear()) }).parse(req.query);
+  sendWorkbook(res, 'finbridge-actuals-template.xlsx', await actualsTemplate(companyIdOf(req), year, langOf(req)));
 });
