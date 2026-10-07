@@ -308,6 +308,14 @@ export function OrgChart({ units, costCenters, types, canManage, selectedId, onS
     }
   }, [layout, apply, centerOn, focusId]);
 
+  // open fitted to the canvas so the whole structure is visible at first sight
+  const didFit = useRef(false);
+  useLayoutEffect(() => {
+    if (didFit.current || !layout.width) return;
+    didFit.current = true;
+    fit();
+  }, [layout, fit]);
+
   // keep the stage within bounds when the canvas is resized
   useEffect(() => {
     const el = canvasRef.current;
