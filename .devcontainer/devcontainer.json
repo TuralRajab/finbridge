@@ -1,13 +1,22 @@
 {
   "name": "FinBridge",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
-  "postCreateCommand": "npm install && npm run db:seed && npm run build",
-  "postStartCommand": "nohup npm start > /tmp/finbridge.log 2>&1 &",
-  "forwardPorts": [4000],
+  "postCreateCommand": "npm install",
+  "postStartCommand": "bash scripts/codespace-start.sh",
+  "forwardPorts": [
+    4000
+  ],
   "portsAttributes": {
-    "4000": { "label": "FinBridge", "onAutoForward": "openBrowser" }
+    "4000": {
+      "label": "FinBridge",
+      "onAutoForward": "openBrowser"
+    }
   },
   "customizations": {
-    "codespaces": { "openFiles": ["README.md"] }
+    "codespaces": {
+      "openFiles": [
+        "README.md"
+      ]
+    }
   }
 }

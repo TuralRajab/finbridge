@@ -39,14 +39,22 @@ Məhsul tədqiqatı: [docs/PRODUCT_RESEARCH.md](docs/PRODUCT_RESEARCH.md) · İc
 
 Node.js quraşdırmaq mümkün deyilsə (məs. şirkət kompüteri), layihəni brauzerdə işə salmaq olar:
 
-1. GitHub-da reponu açın və lazımi budağı seçin.
+1. GitHub-da reponu açın və `claude/exciting-rubin-8pu7lu` budağını seçin.
 2. **Code → Codespaces → Create codespace on …** basın.
-3. Bir neçə dəqiqə gözləyin: paketlər quraşdırılır, demo məlumat yüklənir və tətbiq avtomatik başlayır
-   (`.devcontainer/devcontainer.json`).
+3. Bir neçə dəqiqə gözləyin: paketlər quraşdırılır, demo məlumat yüklənir və tətbiq avtomatik başlayır.
 4. Aşağıdakı **Ports** tabında `4000 (FinBridge)` sətrindəki 🌐 işarəsinə basın — tətbiq yeni tabda açılır.
 
-> Əvvəlki versiyanın bazası varsa (`server/data/finbridge.db`), server başlamayacaq və `npm run db:reset`
-> əmrini işlətməyi xahiş edəcək — v2 sxemi tamamilə yenidir.
+**Codespace hər dəfə açılanda özünü yeniləyir** ([`scripts/codespace-start.sh`](scripts/codespace-start.sh)):
+budağın son kodunu çəkir, paketləri quraşdırır, veb tətbiqi yenidən build edir, köhnə versiyanın bazasını
+demo məlumatla yenidən yaradır və serveri işə salır. Jurnal: `/tmp/finbridge.log`.
+
+Codespace artıq açıqdırsa və köhnə versiyanı göstərirsə, **Terminal**-da bu əmri işlədin:
+
+```bash
+bash scripts/codespace-start.sh
+```
+
+(Bu fayl hələ yoxdursa, əvvəlcə `git pull` edin.) Sonra brauzer tabını yeniləyin (Ctrl+Shift+R).
 
 ---
 
