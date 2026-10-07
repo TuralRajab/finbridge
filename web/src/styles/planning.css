@@ -91,3 +91,4 @@ rect.pc-hatched { stroke: var(--plan-actual); stroke-width: 1; }
 .pc-fill-preview thead th { position: sticky; top: 0; z-index: 1; }
 .pc-fill-opts { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .pc-fill-opts .field { margin-bottom: 0; min-width: 140px; }
+.pc-chart .mchart-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }

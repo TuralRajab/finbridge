@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { WORKFLOW_TYPES, type WorkflowDefinitionDto, type WorkflowPreviewDto, type WorkflowType } from '@finbridge/shared';
+import { WORKFLOW_TYPES, configUserIds, type WorkflowDefinitionDto, type WorkflowPreviewDto, type WorkflowType } from '@finbridge/shared';
 import '../../styles/workflow.css';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -9,7 +9,7 @@ import { date } from '../../lib/format';
 import { useAsync } from '../../lib/useAsync';
 import { Badge, Button, Card, Empty, ErrorMessage, Field, Icon, Input, Modal, PageHeader, Select, Spinner } from '../../components/ui';
 import {
-  conditionText, effectiveState, EMPTY_SAMPLE, PreviewSteps, previewBody, SampleForm, ServerErrors, stepConditionChip, useWfRefs, useWfText,
+  behaviourChips, conditionText, effectiveState, EMPTY_SAMPLE, PreviewSteps, previewBody, SampleForm, ServerErrors, stepConditionChip, useWfRefs, useWfText,
   type SampleInput,
 } from './wfCommon';
 
@@ -23,6 +23,7 @@ const az = {
   how3: 'Qaydanın şərtləri sənədə uyğun gəlməlidir (şərtsiz qayda hər sənədə uyğundur).',
   how4: 'Uyğun gələnlərdən ən kiçik prioritet nömrəsi olan qalib gəlir; bərabər olduqda daha çox şərti olan (daha konkret) qayda seçilir.',
   how5: 'Seçilmiş qaydada şərti ödənməyən mərhələlər ötürülür. İşləyən axınlar göndərilmə anındakı versiyanı saxlayır — redaktə onlara təsir etmir.',
+  how6: 'Hər mərhələnin öz davranışı var: birinin və ya hamısının təsdiqi, rədd / qaytarma icazəsi, qaytarmanın göndərənə və ya əvvəlki mərhələyə getməsi, təsdiqdə şərh tələbi və təsdiqləyən üçün təlimat.',
   type: 'Sənəd növü',
   allTypes: 'Bütün növlər',
   search: 'Ad üzrə axtarış',
@@ -73,6 +74,7 @@ const TEXT = {
     how3: 'The definition\'s conditions must match the document (a definition without conditions matches everything).',
     how4: 'Among the matches, the lowest priority number wins; on a tie the definition with more conditions (the most specific) is chosen.',
     how5: 'Steps of the selected definition whose condition is not met are skipped. Running workflows keep the revision they started with — edits never affect them.',
+    how6: 'Each stage has its own behaviour: one or all approvals, whether reject / return is allowed, whether a return goes to the requester or the previous stage, a comment requirement on approval and instructions for the approver.',
     type: 'Document type',
     allTypes: 'All types',
     search: 'Search by name',
@@ -163,7 +165,7 @@ export function WorkflowListPage() {
       <details className="wfl-how card">
         <summary><Icon name="workflow" /> {L.howTitle}</summary>
         <ol>
-          <li>{L.how1}</li><li>{L.how2}</li><li>{L.how3}</li><li>{L.how4}</li><li>{L.how5}</li>
+          <li>{L.how1}</li><li>{L.how2}</li><li>{L.how3}</li><li>{L.how4}</li><li>{L.how5}</li><li>{L.how6}</li>
         </ol>
       </details>
 
@@ -286,11 +288,15 @@ export function StepChain({ def }: { def: Pick<WorkflowDefinitionDto, 'steps'> }
     <ol className="wfl-chain" aria-label={W.step.replace('{n}', '')}>
       {def.steps.map((s, i) => {
         const chip = stepConditionChip(s.condition, W, locale, t);
+        const users = s.approverType === 'SPECIFIC_USER' ? configUserIds(s.approverConfig).length : 0;
+        const beh = behaviourChips(s, W, { approvers: users || undefined });
+        const title = [s.name, t(`approverType.${s.approverType}` as TKey), s.slaHours ? `SLA ${s.slaHours}h` : '', ...beh.map((c) => c.title && c.key === 'ins' ? `${c.label}: ${c.title}` : c.label)].filter(Boolean).join(' · ');
         return (
-          <li key={s.id ?? i} title={`${s.name} · ${t(`approverType.${s.approverType}` as TKey)}${s.slaHours ? ` · SLA ${s.slaHours}h` : ''}`}>
+          <li key={s.id ?? i} title={title}>
             {i > 0 && <span className="wfl-arrow" aria-hidden="true">→</span>}
             <span className="wfl-step">{s.name}</span>
             {chip && <span className="wfl-chip">{chip}</span>}
+            {beh.filter((c) => c.key !== 'ins').map((c) => <span key={c.key} className={`badge badge-${c.tone} wf-beh`}>{c.label}</span>)}
           </li>
         );
       })}

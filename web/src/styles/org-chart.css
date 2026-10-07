@@ -4,12 +4,13 @@
   --oc-line: #b8c0cc;
   /* one colour slot per unit type; always paired with the type name as text */
   --oc-c0: #0a1a3a; --oc-c1: #2350d0; --oc-c2: #0e7c86; --oc-c3: #6941c6;
-  --oc-c4: #b54708; --oc-c5: #067647; --oc-c6: #c11574; --oc-c7: #4d5b6e;
+  --oc-c4: #b54708; --oc-c5: #067647; --oc-c6: #c11574; --oc-c7: #4d5b6e; --oc-c8: #0369a1; --oc-c9: #65730e;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
   margin-bottom: 20px; min-width: 0; overflow: hidden;
 }
 .oc-c0 { --c: var(--oc-c0); } .oc-c1 { --c: var(--oc-c1); } .oc-c2 { --c: var(--oc-c2); } .oc-c3 { --c: var(--oc-c3); }
 .oc-c4 { --c: var(--oc-c4); } .oc-c5 { --c: var(--oc-c5); } .oc-c6 { --c: var(--oc-c6); } .oc-c7 { --c: var(--oc-c7); }
+.oc-c8 { --c: var(--oc-c8); } .oc-c9 { --c: var(--oc-c9); }
 
 /* ---------- toolbar & legend ---------- */
 .oc-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 16px; border-bottom: 1px solid var(--border); }

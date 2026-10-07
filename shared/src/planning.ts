@@ -2,7 +2,7 @@
  * Planning comparison: when the budget for year Y is prepared, the planner sees the previous years'
  * original budget, final budget (after change requests) and actuals next to the plan being drafted.
  */
-import type { VersionStatus } from './types';
+import type { VersionStatus } from './workflow';
 
 /** `line` = cost center × account (used by the budget-lines grid for reference columns). */
 export type PlanningGroupBy = 'section' | 'costCenter' | 'account' | 'line';

@@ -17,6 +17,8 @@ import { useDisplayName, useMasterData, usableAccounts } from '../../lib/masterd
 import { date, money, parseAmount } from '../../lib/format';
 import { useAsync } from '../../lib/useAsync';
 import { AmountInput, Delta, DetailedError, sum } from './budgetUi';
+import { PlanningTab } from './PlanningTab';
+import { FillFromLastYearModal, lineKey, RefCells, refHeaders, RefToggles, useLineRefs, useRefCols, useRefTexts } from './planningLines';
 import '../../styles/budgets.css';
 
 /* ------------------------------------------------------------------ texts */
@@ -46,6 +48,7 @@ const az = {
   basedOn: 'v{n} əsasında',
   fromChange: 'Dəyişiklik sorğusundan yaranıb',
   tabSections: 'Bölmələr',
+  tabPlanning: 'Planlama müqayisəsi',
   tabLines: 'Büdcə sətirləri',
   tabCompare: 'Versiyaların müqayisəsi',
   tabHistory: 'Tarixçə',
@@ -170,6 +173,7 @@ const TEXT = {
     basedOn: 'based on v{n}',
     fromChange: 'Created from a change request',
     tabSections: 'Sections',
+    tabPlanning: 'Planning comparison',
     tabLines: 'Budget lines',
     tabCompare: 'Compare versions',
     tabHistory: 'History',
@@ -263,7 +267,7 @@ const TEXT = {
 };
 type Texts = typeof az;
 
-type Tab = 'sections' | 'lines' | 'compare' | 'history';
+type Tab = 'planning' | 'sections' | 'lines' | 'compare' | 'history';
 
 /* ------------------------------------------------------------------ page */
 
@@ -285,7 +289,7 @@ export function BudgetDetailPage() {
     () => (versionId ? api<BudgetLineDto[]>('GET', `/budgets/${budgetId}/lines${qs({ versionId })}`) : Promise.resolve([] as BudgetLineDto[])),
     [budgetId, versionId],
   );
-  const [tab, setTab] = useState<Tab>((params.get('tab') as Tab) || 'sections');
+  const [tabState, setTab] = useState<Tab | null>((params.get('tab') as Tab) || null);
   const [sectionFilter, setSectionFilter] = useState<number | ''>('');
   const [selectedSection, setSelectedSection] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<'submit' | 'lock' | null>(null);
@@ -299,6 +303,8 @@ export function BudgetDetailPage() {
   if (error || !detail) return <ErrorMessage error={error} />;
 
   const v = detail.version;
+  // the planning comparison opens first while a version is being drafted
+  const tab: Tab = tabState ?? (v.status === 'DRAFT' ? 'planning' : 'sections');
   const isCurrent = v.id === detail.currentVersionId;
   const currentNo = detail.versions.find((x) => x.id === detail.currentVersionId)?.versionNo ?? v.versionNo;
   const lines = linesQ.data ?? [];
@@ -383,12 +389,14 @@ export function BudgetDetailPage() {
       </div>
 
       <div className="tabs-wrap"><Tabs<Tab> value={tab} onChange={setTab} tabs={[
+        { value: 'planning', label: L.tabPlanning },
         { value: 'sections', label: L.tabSections },
         { value: 'lines', label: <>{L.tabLines} {dirtyCount > 0 && <span className="dirty-dot" aria-label={fmt(L.unsaved, { n: dirtyCount })}>●</span>}</> },
         { value: 'compare', label: L.tabCompare },
         { value: 'history', label: L.tabHistory },
       ]} /></div>
 
+      {tab === 'planning' && <PlanningTab key={v.id} detail={detail} />}
       {tab === 'sections' && (
         <SectionsTab detail={detail} isCurrent={isCurrent} L={L} selected={selectedSection} onSelect={setSelectedSection}
           onOpenLines={(unitId) => { setSectionFilter(unitId); setTab('lines'); }} onChanged={reloadAll} setDetail={setDetail} />
@@ -575,9 +583,13 @@ function LinesTab({ detail, isCurrent, lines, loading, error, setLines, reloadLi
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<BudgetLineDto | null>(null);
   const dirty = Object.keys(drafts).length;
+  const T = useRefTexts();
+  const [refCols, setRefCols] = useRefCols();
+  const [selection, setSelection] = useState<Set<number>>(new Set());
+  const [filling, setFilling] = useState(false);
 
   useEffect(() => { onDirty(dirty); }, [dirty, onDirty]);
-  useEffect(() => { setDrafts({}); }, [detail.version.id]);
+  useEffect(() => { setDrafts({}); setSelection(new Set()); }, [detail.version.id]);
   useEffect(() => {
     if (!dirty) return;
     const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
@@ -586,6 +598,9 @@ function LinesTab({ detail, isCurrent, lines, loading, error, setLines, reloadLi
   }, [dirty]);
 
   const all = lines ?? [];
+  const anyRef = refCols.actual || refCols.budget || refCols.delta || refCols.spark;
+  const refs = useLineRefs(detail, all, anyRef || filling, 0);
+  const refHdrs = anyRef ? refHeaders(refCols, refs, T) : [];
   const ccOptions = useMemo(() => {
     const m = new Map<number, string>();
     all.filter((l) => !sectionFilter || l.sectionUnitId === sectionFilter).forEach((l) => m.set(l.costCenterId, `${l.costCenterCode} · ${l.costCenterName}`));
@@ -631,6 +646,12 @@ function LinesTab({ detail, isCurrent, lines, loading, error, setLines, reloadLi
       onChanged();
     } catch (e) { setSaveError(e); } finally { setSaving(false); }
   };
+
+  const editableVisible = visible.filter((l) => editable && l.canEdit);
+  const selectedLines = all.filter((l) => selection.has(l.id) && l.canEdit);
+  const toggleSel = (id: number) => setSelection((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allSelected = editableVisible.length > 0 && editableVisible.every((l) => selection.has(l.id));
+  const visibleRefRows = [...new Set(visible.map(lineKey))].map((k) => refs.byKey.get(k));
 
   const monthTotals = Array.from({ length: 12 }, (_, i) => sum(visible.map((l) => monthsOf(l)[i])));
   const classTotal = (cls: 'OPEX' | 'CAPEX') => {
@@ -679,21 +700,37 @@ function LinesTab({ detail, isCurrent, lines, loading, error, setLines, reloadLi
             {dirty > 0 && <span className="dirty" role="status">{fmt(L.unsaved, { n: dirty })}</span>}
             {savedFlag && !dirty && <span className="ok-text" role="status"><Icon name="check" /> {L.saved}</span>}
             {dirty > 0 && <Button variant="ghost" onClick={() => setDrafts({})}>{L.discard}</Button>}
+            {selectedLines.length > 0 && (
+              <span className="small muted" role="status">{fmt(T.selectedN, { n: selectedLines.length })}{' '}
+                <button type="button" className="link-btn small" style={{ display: 'inline' }} onClick={() => setSelection(new Set())}>{T.clearSel}</button></span>
+            )}
+            {anyEditable && (
+              <Button onClick={() => setFilling(true)} disabled={dirty > 0 || editableVisible.length === 0}
+                title={dirty > 0 ? T.fillDirty : editableVisible.length === 0 ? T.fillNoEdit : undefined}><Icon name="wand" /> {T.fill}</Button>
+            )}
             {anyEditable && <Button onClick={() => setAdding(true)} disabled={dirty > 0} title={dirty > 0 ? fmt(L.unsaved, { n: dirty }) : undefined}><Icon name="plus" /> {L.addLine}</Button>}
             {anyEditable && <Button variant="primary" busy={saving} disabled={!dirty} onClick={save}><Icon name="check" /> {L.save}</Button>}
           </div>
         </div>
+        <RefToggles cols={refCols} setCols={setRefCols} refs={refs} T={T} />
         {anyEditable && <p className="small muted lines-hint">{L.linesHint}</p>}
         {saveError ? <div className="card-body"><DetailedError error={saveError} /></div> : null}
         {loading && !lines ? <Spinner /> : error ? <div className="card-body"><ErrorMessage error={error} /></div> : visible.length === 0 ? <Empty>{L.emptyLines}</Empty> : (
           <div className="table-scroll grid-scroll">
             <table className="table grid-table budget-grid">
               <thead><tr>
-                <th className="sticky-col">{L.costCenter}</th>
+                <th className="sticky-col">
+                  {editableVisible.length > 0 && (
+                    <input type="checkbox" className="line-check" aria-label={T.selectAll} checked={allSelected}
+                      onChange={() => setSelection(allSelected ? new Set() : new Set(editableVisible.map((l) => l.id)))} />
+                  )}
+                  {L.costCenter}
+                </th>
                 <th>{L.account}</th>
                 <th>{L.class}</th>
                 {months.map((m) => <th key={m} className="r">{m}</th>)}
                 <th className="r">{L.rowTotal}</th>
+                {refHdrs.map((h, i) => <th key={h.key} className={`r pc-ref${i === 0 ? ' pc-ref-first' : ''}`}>{h.label}</th>)}
                 <th><span className="sr-only">{t('common.actions')}</span></th>
               </tr></thead>
               <tbody>
@@ -703,6 +740,10 @@ function LinesTab({ detail, isCurrent, lines, loading, error, setLines, reloadLi
                   return (
                     <tr key={l.id} className={drafts[l.id] ? 'is-dirty' : ''}>
                       <td className="sticky-col">
+                        {canEdit && (
+                          <input type="checkbox" className="line-check" checked={selection.has(l.id)} onChange={() => toggleSel(l.id)}
+                            aria-label={fmt(T.selectLine, { line: `${l.costCenterCode} / ${l.accountCode}` })} />
+                        )}
                         <b>{l.costCenterCode}</b> <span className="small">{l.costCenterName}</span>
                         <div className="muted small">{l.sectionName}</div>
                       </td>
@@ -719,6 +760,7 @@ function LinesTab({ detail, isCurrent, lines, loading, error, setLines, reloadLi
                         </td>
                       ))}
                       <td className="r num"><b>{money(sum(ms), locale)}</b></td>
+                      {anyRef && <RefCells cols={refCols} refs={refs} rows={[refs.byKey.get(lineKey(l))]} months={ms} label={`${l.costCenterCode} / ${l.accountCode}`} T={T} />}
                       <td className="r">
                         {canEdit && (
                           <button type="button" className="icon-btn" title={L.deleteLine} aria-label={`${L.deleteLine}: ${l.costCenterCode} / ${l.accountCode}`}
@@ -735,19 +777,21 @@ function LinesTab({ detail, isCurrent, lines, loading, error, setLines, reloadLi
                     <tr className="sub-total">
                       <td className="sticky-col">OPEX</td><td colSpan={2} className="muted small">{opex.n}</td>
                       {opex.months.map((x, i) => <td key={i} className="r num">{money(x, locale)}</td>)}
-                      <td className="r num">{money(sum(opex.months), locale)}</td><td />
+                      <td className="r num">{money(sum(opex.months), locale)}</td>{refHdrs.map((h) => <td key={h.key} className="pc-ref" />)}<td />
                     </tr>
                     <tr className="sub-total">
                       <td className="sticky-col">CAPEX</td><td colSpan={2} className="muted small">{capex.n}</td>
                       {capex.months.map((x, i) => <td key={i} className="r num">{money(x, locale)}</td>)}
-                      <td className="r num">{money(sum(capex.months), locale)}</td><td />
+                      <td className="r num">{money(sum(capex.months), locale)}</td>{refHdrs.map((h) => <td key={h.key} className="pc-ref" />)}<td />
                     </tr>
                   </>
                 )}
                 <tr>
                   <td className="sticky-col"><b>{L.totalRow}</b></td><td colSpan={2} className="muted small">{visible.length}</td>
                   {monthTotals.map((x, i) => <td key={i} className="r num"><b>{money(x, locale)}</b></td>)}
-                  <td className="r num"><b>{money(sum(monthTotals), locale)}</b></td><td />
+                  <td className="r num"><b>{money(sum(monthTotals), locale)}</b></td>
+                  {anyRef && <RefCells cols={refCols} refs={refs} rows={visibleRefRows} months={monthTotals} label={L.totalRow} T={T} />}
+                  <td />
                 </tr>
               </tfoot>
             </table>
@@ -755,6 +799,11 @@ function LinesTab({ detail, isCurrent, lines, loading, error, setLines, reloadLi
         )}
       </Card>
 
+      {filling && (
+        <FillFromLastYearModal detail={detail} selected={selectedLines} visible={editableVisible} refs={refs} T={T}
+          onClose={() => setFilling(false)}
+          onSaved={(updated) => { setLines(updated); setSelection(new Set()); setSavedFlag(true); onChanged(); }} />
+      )}
       {adding && (
         <AddLineModal detail={detail} lines={all} defaultSection={sectionFilter} defaultCc={ccFilter} L={L}
           onClose={() => setAdding(false)} onAdded={async () => { setAdding(false); await reloadLines(); onChanged(); }} />

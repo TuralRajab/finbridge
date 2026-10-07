@@ -64,7 +64,8 @@ const STACK_GAP = 14;
 const CHIP_H = 22;
 const MAX_CHIPS = 3;
 const PAD = 40;
-const MIN_K = 0.2;
+const MIN_K = 0.1;
+const READABLE_K = 0.8; // zoom used when jumping to a unit
 const MAX_K = 2;
 
 interface LNode {
@@ -169,7 +170,7 @@ function buildLayout(units: OrgUnitDto[], ccs: CostCenterDto[], collapsed: Set<n
 
 /* ------------------------------------------------------------------ helpers */
 
-const PALETTE = 8;
+const PALETTE = 10;
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toLocaleUpperCase();
@@ -253,11 +254,12 @@ export function OrgChart({ units, costCenters, types, canManage, selectedId, onS
     apply();
   }, [layout, apply]);
 
-  const centerOn = useCallback((id: number, onlyIfHidden = false) => {
+  const centerOn = useCallback((id: number, onlyIfHidden = false, minK = 0) => {
     const n = layout.byId.get(id);
     if (!n) return;
     const v = view.current;
     const { cw, ch } = size();
+    if (v.k < minK) { v.k = minK; onlyIfHidden = false; }
     const sx = v.x + n.x * v.k; const sy = v.y + n.y * v.k;
     if (onlyIfHidden && sx >= 8 && sy >= 8 && sx + W * v.k <= cw - 8 && sy + n.h * v.k <= ch - 8) return;
     v.x = cw / 2 - (n.x + W / 2) * v.k;
@@ -270,12 +272,14 @@ export function OrgChart({ units, costCenters, types, canManage, selectedId, onS
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   /** Centre a unit once it is laid out (now, or after the pending expand re-layouts). */
-  const reveal = (id: number) => {
+  const pendingK = useRef(0);
+  const reveal = (id: number, minK = READABLE_K) => {
     if (layoutRef.current.byId.has(id)) {
       pendingCenter.current = null;
-      requestAnimationFrame(() => centerRef.current(id, true));
-    } else pendingCenter.current = id;
+      requestAnimationFrame(() => centerRef.current(id, true, minK));
+    } else { pendingCenter.current = id; pendingK.current = minK; }
   };
+  const clickSelect = useRef(false);
 
   // initial view, keep anchors stable on re-layout, run pending centring
   useLayoutEffect(() => {
@@ -295,7 +299,7 @@ export function OrgChart({ units, costCenters, types, canManage, selectedId, onS
     }
     apply();
     if (pendingCenter.current !== null && layout.byId.has(pendingCenter.current)) {
-      centerOn(pendingCenter.current, true);
+      centerOn(pendingCenter.current, true, pendingK.current);
       pendingCenter.current = null;
     }
     if (pendingFocus.current && focusId !== null) {
@@ -331,7 +335,8 @@ export function OrgChart({ units, costCenters, types, canManage, selectedId, onS
   useEffect(() => {
     if (selectedId === null) return;
     setCollapsed((s) => { const n = expandAncestors([selectedId], s); return n.size === s.size ? s : n; });
-    reveal(selectedId);
+    reveal(selectedId, clickSelect.current ? 0 : READABLE_K);
+    clickSelect.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
@@ -365,7 +370,7 @@ export function OrgChart({ units, costCenters, types, canManage, selectedId, onS
     if (!matches.length) return;
     const i = (Math.min(matchIdx, matches.length - 1) + d + matches.length) % matches.length;
     setMatchIdx(i);
-    centerOn(matches[i]);
+    centerOn(matches[i], false, READABLE_K);
   };
 
   // ---------------------------------------------------------------- pan / zoom input
@@ -456,7 +461,7 @@ export function OrgChart({ units, costCenters, types, canManage, selectedId, onS
     const siblings = n.parent ? n.parent.kids : layout.roots;
     const i = siblings.indexOf(n);
     switch (e.key) {
-      case 'Enter': case ' ': e.preventDefault(); onSelect(n.u.id); break;
+      case 'Enter': case ' ': e.preventDefault(); clickSelect.current = true; onSelect(n.u.id); break;
       case 'ArrowUp': e.preventDefault(); moveFocus(n.parent?.u.id); break;
       case 'ArrowDown':
         e.preventDefault();
@@ -571,7 +576,7 @@ export function OrgChart({ units, costCenters, types, canManage, selectedId, onS
                     tabIndex={u.id === tabStop ? 0 : -1} aria-selected={isSel} aria-level={n.depth + 1} aria-setsize={siblings.length} aria-posinset={siblings.indexOf(n) + 1}
                     aria-expanded={n.childTotal > 0 ? !n.collapsed : undefined}
                     aria-label={`${dn(u)}, ${u.code}, ${typeLabel(u)}, ${L.head}: ${u.headName ?? L.noHead}${u.isActive ? '' : `, ${L.inactive}`}`}
-                    onClick={() => { setFocusId(u.id); onSelect(isSel ? null : u.id); }}
+                    onClick={() => { setFocusId(u.id); clickSelect.current = true; onSelect(isSel ? null : u.id); }}
                     onFocus={() => setFocusId(u.id)} onKeyDown={(e) => onNodeKey(e, n)}>
                     <div className="oc-node-top">
                       <span className="oc-type"><span className="oc-swatch" aria-hidden="true" />{typeLabel(u)}</span>
@@ -625,7 +630,7 @@ export function OrgChart({ units, costCenters, types, canManage, selectedId, onS
             costCenters={costCenters.filter((c) => c.orgUnitId === selected.id)}
             children={units.filter((u) => u.parentId === selected.id).sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code))}
             canManage={canManage} onAction={onAction} onOpenInList={onOpenInList}
-            onSelect={(id) => onSelect(id)} onLocate={() => centerOn(selected.id)} onClose={() => {
+            onSelect={(id) => onSelect(id)} onLocate={() => centerOn(selected.id, false, READABLE_K)} onClose={() => {
               onSelect(null);
               stageRef.current?.querySelector<HTMLElement>(`[data-id="${selected.id}"]`)?.focus({ preventScroll: true });
             }} />
