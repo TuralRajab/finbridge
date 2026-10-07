@@ -17,13 +17,13 @@ export const consumptionQuery = z.object({
   through: z.coerce.number().int().min(1).max(12).optional(),
 });
 
-reportsRouter.get('/consumption', (req, res) => { res.json(consumptionReport(currentUser(req), consumptionQuery.parse(req.query))); });
+reportsRouter.get('/consumption', requirePermission('reports.view'), (req, res) => { res.json(consumptionReport(currentUser(req), consumptionQuery.parse(req.query))); });
 
-reportsRouter.get('/transactions', (req, res) => {
+reportsRouter.get('/transactions', requirePermission('reports.view'), (req, res) => {
   const q = z.object({ year, costCenterId: z.coerce.number().int().positive(), accountId: z.coerce.number().int().positive().optional() }).parse(req.query);
   res.json(transactions(currentUser(req), q.year, q.costCenterId, q.accountId));
 });
 
-reportsRouter.get('/dashboard', (req, res) => { res.json(dashboard(currentUser(req), z.object({ year }).parse(req.query).year)); });
-reportsRouter.get('/workflows', (req, res) => { res.json(workflowReport(currentUser(req))); });
-reportsRouter.get('/changes', (req, res) => { res.json(changeReport(currentUser(req), z.object({ year }).parse(req.query).year)); });
+reportsRouter.get('/dashboard', requirePermission('dashboard.view'), (req, res) => { res.json(dashboard(currentUser(req), z.object({ year }).parse(req.query).year)); });
+reportsRouter.get('/workflows', requirePermission('reports.view'), (req, res) => { res.json(workflowReport(currentUser(req))); });
+reportsRouter.get('/changes', requirePermission('reports.view'), (req, res) => { res.json(changeReport(currentUser(req), z.object({ year }).parse(req.query).year)); });

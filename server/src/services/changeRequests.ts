@@ -1,4 +1,5 @@
-import { can, REQUEST_EDITABLE, roundMoney, type ChangeRequestDto, type RequestStatus } from '@finbridge/shared';
+import { userCan } from '../lib/permissions';
+import { REQUEST_EDITABLE, roundMoney, type ChangeRequestDto, type RequestStatus } from '@finbridge/shared';
 import { all, get, run, tx } from '../db/database';
 import { audit } from '../lib/audit';
 import { nowIso } from '../lib/clock';
@@ -51,7 +52,7 @@ function writeItems(cr: { id: number }, versionId: number, ccId: number, items: 
 }
 
 function validate(user: UserRow, input: CrInput) {
-  if (!can(user.role, 'change.create')) throw forbidden();
+  if (!userCan(user, 'change.create')) throw forbidden();
   const budget = loadBudget(user.company_id!, input.budgetId);
   const version = loadVersion(budget);
   if (version.status !== 'LOCKED') throw new HttpError(409, 'INVALID_TRANSITION', 'Change requests are raised against the locked (approved) budget. Edit the draft directly instead.');

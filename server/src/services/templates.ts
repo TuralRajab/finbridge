@@ -144,7 +144,7 @@ export function applyTemplate(companyId: number, userId: number, code: string, o
           skipSelfApproval: true, isActive: true, effectiveFrom: null, effectiveTo: null,
           steps: w.steps.map((s, i) => ({
             seq: i + 1, name: s.name, approverType: s.approverType, approverConfig: s.config ?? {},
-            condition: s.condition ?? null, slaHours: s.slaHours ?? null, escalation: null,
+            condition: s.condition ?? null, slaHours: s.slaHours ?? null, escalation: null, ...(s.behaviour ?? {}),
           })),
         });
         result.workflowsCreated++;

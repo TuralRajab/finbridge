@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { APPROVER_TYPES, CONDITION_FIELDS, CONDITION_OPS, TASK_ACTIONS, VERSION_KINDS, WORKFLOW_TYPES, can, type Condition, type DelegationDto, type RuleContext } from '@finbridge/shared';
+import { APPROVAL_MODES, APPROVER_TYPES, CONDITION_FIELDS, CONDITION_OPS, RETURN_TARGETS, TASK_ACTIONS, VERSION_KINDS, WORKFLOW_TYPES, type Condition, type DelegationDto, type RuleContext } from '@finbridge/shared';
 import { all, get, run } from '../db/database';
 import { companyIdOf, currentUser, requirePermission } from '../auth/middleware';
 import { audit } from '../lib/audit';
 import { nowIso } from '../lib/clock';
 import { badRequest, forbidden, notFound } from '../lib/errors';
 import { toId } from '../lib/params';
+import { userCan } from '../lib/permissions';
 import { getDefinition, listDefinitions, saveDefinition } from '../services/workflowDefinitions';
 import { actOnTask, cancelInstance, inbox, instanceDto, isParticipant, previewWorkflow, processEscalations } from '../services/workflowEngine';
 import { OrgIndex } from '../services/org';
@@ -15,7 +16,8 @@ import { AccountIndex } from '../services/accounts';
 export const workflowsRouter = Router();
 
 const approverConfig = z.object({
-  userId: z.number().int().positive().optional(), role: z.string().optional(), unitTypeCode: z.string().optional(),
+  userId: z.number().int().positive().optional(), userIds: z.array(z.number().int().positive()).max(50).optional(),
+  role: z.string().trim().min(1).max(64).optional(), unitTypeCode: z.string().optional(),
   jobFamilyId: z.number().int().positive().optional(), jobFamilyCode: z.string().optional(),
   positionId: z.number().int().positive().optional(), positionCode: z.string().optional(),
 }).default({});
@@ -43,11 +45,18 @@ const defSchema = z.object({
     condition: condition.nullable().default(null),
     slaHours: z.number().int().min(1).max(8760).nullable().default(null),
     escalation: z.object({ approverType: z.enum(APPROVER_TYPES), config: approverConfig }).nullable().default(null),
+    // stage behaviour — defaults keep the classic "one approval, reject / return to requester" behaviour
+    approvalMode: z.enum(APPROVAL_MODES).default('ANY'),
+    allowReject: z.boolean().default(true),
+    allowReturn: z.boolean().default(true),
+    returnTo: z.enum(RETURN_TARGETS).default('REQUESTER'),
+    requireCommentOnApprove: z.boolean().default(false),
+    instructions: z.string().trim().max(2000).nullable().optional().transform((v) => v || null),
   })).min(1).max(20),
 });
 
 workflowsRouter.get('/meta', (_req, res) => {
-  res.json({ workflowTypes: WORKFLOW_TYPES, approverTypes: APPROVER_TYPES, conditionFields: CONDITION_FIELDS, conditionOps: CONDITION_OPS });
+  res.json({ workflowTypes: WORKFLOW_TYPES, approverTypes: APPROVER_TYPES, conditionFields: CONDITION_FIELDS, conditionOps: CONDITION_OPS, approvalModes: APPROVAL_MODES, returnTargets: RETURN_TARGETS });
 });
 
 workflowsRouter.get('/definitions', requirePermission('masterdata.view'), (req, res) => { res.json(listDefinitions(companyIdOf(req))); });
@@ -108,7 +117,7 @@ workflowsRouter.get('/inbox', (req, res) => { res.json(inbox(currentUser(req)));
 workflowsRouter.get('/instances/:id', (req, res) => {
   const user = currentUser(req);
   const id = toId(req.params.id);
-  if (!can(user.role, 'budget.view') && !can(user.role, 'audit.view') && !isParticipant(user.id, id)) throw forbidden();
+  if (!userCan(user, 'budget.view') && !userCan(user, 'audit.view') && !isParticipant(user.id, id)) throw forbidden();
   res.json(instanceDto(user, id));
 });
 
@@ -141,7 +150,7 @@ function delegations(companyId: number, userId?: number): DelegationDto[] {
 
 workflowsRouter.get('/delegations', (req, res) => {
   const user = currentUser(req);
-  res.json(delegations(companyIdOf(req), can(user.role, 'users.manage') || can(user.role, 'workflow.manage') ? undefined : user.id));
+  res.json(delegations(companyIdOf(req), userCan(user, 'users.manage') || userCan(user, 'workflow.manage') ? undefined : user.id));
 });
 
 const delSchema = z.object({
@@ -154,7 +163,7 @@ workflowsRouter.post('/delegations', (req, res) => {
   const companyId = companyIdOf(req);
   const b = delSchema.parse(req.body);
   const from = b.fromUserId ?? user.id;
-  if (from !== user.id && !can(user.role, 'users.manage')) throw forbidden('You can only delegate your own approvals');
+  if (from !== user.id && !userCan(user, 'users.manage')) throw forbidden('You can only delegate your own approvals');
   if (from === b.toUserId) throw badRequest('VALIDATION_ERROR', 'Choose another user');
   if (b.validTo < b.validFrom) throw badRequest('VALIDATION_ERROR', 'End date is before start date');
   for (const u of [from, b.toUserId]) if (!get('SELECT 1 FROM users WHERE id = ? AND company_id = ? AND is_active = 1', u, companyId)) throw notFound('User');
@@ -170,7 +179,7 @@ workflowsRouter.delete('/delegations/:id', (req, res) => {
   const id = toId(req.params.id);
   const d = get<{ from_user_id: number }>('SELECT from_user_id FROM user_delegations WHERE id = ? AND company_id = ?', id, companyId);
   if (!d) throw notFound('Delegation');
-  if (d.from_user_id !== user.id && !can(user.role, 'users.manage')) throw forbidden();
+  if (d.from_user_id !== user.id && !userCan(user, 'users.manage')) throw forbidden();
   run('UPDATE user_delegations SET is_active = 0 WHERE id = ?', id);
   audit(companyId, user.id, 'DELEGATION', id, 'REVOKED', null);
   res.status(204).end();

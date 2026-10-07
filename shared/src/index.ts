@@ -6,3 +6,4 @@ export * from './months';
 export * from './types';
 export * from './errors';
 export * from './excel';
+export * from './planning';

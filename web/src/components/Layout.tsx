@@ -6,13 +6,14 @@ import { date } from '../lib/format';
 import { LanguageSwitch } from './LanguageSwitch';
 import { Badge, Icon, Logo } from './ui';
 
-interface NavItem { to: string; label: TKey; icon: string; permission: Permission; end?: boolean; count?: 'tasks' }
+/** `any`: shown when the user has at least one of these permissions (default: `permission`). */
+export interface NavItem { to: string; label: TKey; icon: string; permission: Permission; any?: Permission[]; end?: boolean; count?: 'tasks' }
 
-const SECTIONS: { title: TKey; items: NavItem[] }[] = [
+export const NAV_SECTIONS: { title: TKey; items: NavItem[] }[] = [
   {
     title: 'nav.overview',
     items: [
-      { to: '/', label: 'nav.dashboard', icon: 'dashboard', permission: 'reports.view', end: true },
+      { to: '/', label: 'nav.dashboard', icon: 'dashboard', permission: 'dashboard.view', end: true },
       { to: '/approvals', label: 'nav.approvals', icon: 'inbox', permission: 'masterdata.view', count: 'tasks' },
     ],
   },
@@ -26,7 +27,7 @@ const SECTIONS: { title: TKey; items: NavItem[] }[] = [
   {
     title: 'nav.spend',
     items: [
-      { to: '/requests', label: 'nav.requests', icon: 'request', permission: 'request.create' },
+      { to: '/requests', label: 'nav.requests', icon: 'request', permission: 'requests.view' },
       { to: '/actuals', label: 'nav.actuals', icon: 'actuals', permission: 'actuals.view' },
     ],
   },
@@ -41,18 +42,20 @@ const SECTIONS: { title: TKey; items: NavItem[] }[] = [
   {
     title: 'nav.administration',
     items: [
+      { to: '/admin', label: 'nav.adminCenter', icon: 'settings', permission: 'users.view', any: ['users.view', 'org.manage', 'coa.manage', 'workflow.manage', 'company.manage', 'audit.view'], end: true },
       { to: '/setup', label: 'nav.setup', icon: 'wand', permission: 'templates.apply' },
-      { to: '/admin/organization', label: 'nav.organization', icon: 'org', permission: 'masterdata.view' },
-      { to: '/admin/cost-centers', label: 'nav.costCenters', icon: 'costCenters', permission: 'masterdata.view' },
-      { to: '/admin/accounts', label: 'nav.accounts', icon: 'accounts', permission: 'masterdata.view' },
+      { to: '/admin/organization', label: 'nav.organization', icon: 'org', permission: 'org.view' },
+      { to: '/admin/cost-centers', label: 'nav.costCenters', icon: 'costCenters', permission: 'org.view' },
+      { to: '/admin/accounts', label: 'nav.accounts', icon: 'accounts', permission: 'coa.view' },
       { to: '/admin/templates', label: 'nav.templates', icon: 'template', permission: 'templates.apply' },
       { to: '/admin/import', label: 'nav.bulkImport', icon: 'upload', permission: 'excel.import' },
-      { to: '/admin/financial', label: 'nav.financial', icon: 'settings', permission: 'coa.manage' },
-      { to: '/admin/workflows', label: 'nav.workflows', icon: 'workflow', permission: 'workflow.manage' },
+      { to: '/admin/financial', label: 'nav.financial', icon: 'settings', permission: 'coa.view', any: ['coa.view', 'company.manage'] },
+      { to: '/admin/workflows', label: 'nav.workflows', icon: 'workflow', permission: 'workflow.view' },
       { to: '/delegations', label: 'nav.delegations', icon: 'delegate', permission: 'masterdata.view' },
-      { to: '/admin/users', label: 'nav.users', icon: 'users', permission: 'users.manage' },
+      { to: '/admin/users', label: 'nav.users', icon: 'users', permission: 'users.view' },
+      { to: '/admin/roles', label: 'nav.roles', icon: 'lock', permission: 'users.view' },
       { to: '/admin/audit', label: 'nav.audit', icon: 'audit', permission: 'audit.view' },
-      { to: '/admin/company', label: 'nav.company', icon: 'company', permission: 'masterdata.view' },
+      { to: '/admin/company', label: 'nav.company', icon: 'company', permission: 'company.view' },
       { to: '/platform', label: 'nav.platform', icon: 'platform', permission: 'platform.manage' },
     ],
   },
@@ -72,8 +75,8 @@ export function Layout() {
         <div className="sidebar-brand"><Logo light /></div>
         {user.company && <div className="sidebar-company" title={user.company.name}>{user.company.name}</div>}
         <nav className="nav">
-          {SECTIONS.map((s) => {
-            const items = s.items.filter((i) => can(i.permission) && (i.permission !== 'masterdata.view' || user.role !== 'SUPER_ADMIN'));
+          {NAV_SECTIONS.map((s) => {
+            const items = s.items.filter((i) => (i.any ?? [i.permission]).some((p) => can(p)) && (i.permission !== 'masterdata.view' || user.role !== 'SUPER_ADMIN'));
             if (!items.length) return null;
             return (
               <div key={s.title} className="nav-section">
@@ -108,7 +111,7 @@ export function Layout() {
             <LanguageSwitch />
             <button type="button" className="user-chip" onClick={() => navigate('/profile')} title={t('nav.profile')}>
               <span className="avatar">{user.fullName.split(' ').map((p) => p[0]).slice(0, 2).join('')}</span>
-              <span className="user-meta"><b>{user.fullName}</b><small>{t(`roles.${user.role}`)}</small></span>
+              <span className="user-meta"><b>{user.fullName}</b><small>{user.roleCode && user.roleCode !== user.role ? user.roleName : t(`roles.${user.role}`)}</small></span>
             </button>
             <button type="button" className="icon-btn" onClick={() => { logout(); navigate('/login'); }} title={t('nav.logout')} aria-label={t('nav.logout')}>
               <Icon name="logout" size={18} />

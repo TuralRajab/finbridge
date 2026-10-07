@@ -5,9 +5,9 @@
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import {
-  APPROVER_TYPES, COMPANY_ROLES, CONDITION_FIELDS, NUMERIC_FIELDS, REQUEST_TYPES, VERSION_KINDS,
+  APPROVER_TYPES, COMPANY_ROLES, CONDITION_FIELDS, NUMERIC_FIELDS, REQUEST_TYPES, VERSION_KINDS, configUserIds, stepBehaviour,
   type AccountDto, type ApproverConfig, type ApproverType, type Condition, type ConditionField, type ConditionOp,
-  type JobFamilyDto, type OrgUnitTypeDto, type PositionDto, type Rule, type RuleContext, type WorkflowPreviewDto, type WorkflowStepDto,
+  type JobFamilyDto, type OrgUnitTypeDto, type PositionDto, type Rule, type RuleContext, type StepBehaviour, type WorkflowPreviewDto, type WorkflowStepDto,
 } from '@finbridge/shared';
 import { api, ApiError } from '../../api/client';
 import { useI18n, useLocal, type TKey } from '../../i18n';
@@ -45,8 +45,8 @@ const az = {
   removeValue: 'Dəyəri çıxar: {v}',
   industryHint: 'Kodları vergüllə ayırın',
   explain: {
-    SPECIFIC_USER: 'Seçilmiş konkret istifadəçi təsdiqləyir.',
-    ROLE: 'Seçilmiş rolda olan bütün aktiv istifadəçilər; birinin təsdiqi kifayətdir.',
+    SPECIFIC_USER: 'Seçilmiş konkret istifadəçi(lər) təsdiqləyir. Bir neçə nəfər seçib «hamısı təsdiqləməlidir» rejimi ilə komitə qura bilərsiniz.',
+    ROLE: 'Seçilmiş rolda (şirkətin öz rolları da daxil) olan bütün aktiv istifadəçilər.',
     CEO: 'CEO rolunda olan istifadəçi.',
     CFO: 'CFO rolunda olan istifadəçi.',
     FINANCE_MANAGER: 'Maliyyə meneceri rolunda olan istifadəçilər.',
@@ -60,7 +60,37 @@ const az = {
     DYNAMIC_MANAGER: 'Sorğu edənin birbaşa rəhbəri (istifadəçi kartındakı rəhbər).',
   } as Record<ApproverType, string>,
   cfgUser: 'İstifadəçi',
+  cfgUsers: 'İstifadəçilər',
+  cfgUsersHint: 'Bir və ya bir neçə istifadəçi seçin.',
+  addUser: 'İstifadəçi əlavə et…',
+  removeUser: 'Çıxar: {name}',
   cfgRole: 'Rol',
+  customRole: 'şirkət rolu',
+  rolesFallback: 'Şirkət rolları yüklənmədi — daxili rollar göstərilir.',
+  beh: {
+    any: 'Biri kifayətdir',
+    all: 'Hamısı təsdiqləməlidir',
+    allN: 'Hamısı ({n})',
+    noReject: 'Rədd edə bilməz',
+    noReturn: 'Qaytara bilməz',
+    approveOnly: 'Yalnız təsdiq',
+    returnPrev: '↩ əvvəlki mərhələyə',
+    returnReq: '↩ göndərənə',
+    commentReq: 'Təsdiqdə şərh məcburi',
+    instructions: 'Təlimat var',
+  },
+  flow: {
+    title: 'Axının sxemi',
+    requester: 'Göndərən',
+    approved: 'Təsdiqləndi',
+    rejected: 'Rədd edildi',
+    conditional: 'Şərti',
+    returnTo: 'Qaytarma: {to}',
+    toRequester: 'göndərənə',
+    toStep: '{n}-ci mərhələyə',
+    stage: '{n}. mərhələ',
+    empty: 'Mərhələ yoxdur',
+  },
   cfgUnitType: 'Vahid növü',
   cfgUnitTypeHint: 'Boş qalsa, Departament növü götürülür.',
   cfgJobFamily: 'Peşə ailəsi',
@@ -98,8 +128,8 @@ const en: typeof az = {
   removeValue: 'Remove value: {v}',
   industryHint: 'Separate codes with commas',
   explain: {
-    SPECIFIC_USER: 'The selected user approves.',
-    ROLE: 'All active users with the selected role; one approval is enough.',
+    SPECIFIC_USER: 'The selected user(s) approve. Pick several people and the “everyone must approve” mode to build a committee.',
+    ROLE: 'All active users with the selected role (including the company\'s own roles).',
     CEO: 'The user with the CEO role.',
     CFO: 'The user with the CFO role.',
     FINANCE_MANAGER: 'Users with the Finance manager role.',
@@ -113,7 +143,37 @@ const en: typeof az = {
     DYNAMIC_MANAGER: 'The requester\'s line manager (from the user record).',
   },
   cfgUser: 'User',
+  cfgUsers: 'Users',
+  cfgUsersHint: 'Choose one or more users.',
+  addUser: 'Add a user…',
+  removeUser: 'Remove: {name}',
   cfgRole: 'Role',
+  customRole: 'company role',
+  rolesFallback: 'Company roles could not be loaded — built-in roles are shown.',
+  beh: {
+    any: 'One is enough',
+    all: 'Everyone must approve',
+    allN: 'All ({n})',
+    noReject: 'Cannot reject',
+    noReturn: 'Cannot return',
+    approveOnly: 'Approve only',
+    returnPrev: '↩ to previous stage',
+    returnReq: '↩ to requester',
+    commentReq: 'Comment required on approval',
+    instructions: 'Has instructions',
+  },
+  flow: {
+    title: 'Flow diagram',
+    requester: 'Requester',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    conditional: 'Conditional',
+    returnTo: 'Return: {to}',
+    toRequester: 'to requester',
+    toStep: 'to stage {n}',
+    stage: 'Stage {n}',
+    empty: 'No stages',
+  },
   cfgUnitType: 'Unit type',
   cfgUnitTypeHint: 'Defaults to the Department type when empty.',
   cfgJobFamily: 'Job family',
@@ -136,21 +196,50 @@ export const isMultiOp = (op: ConditionOp) => op === 'in' || op === 'notIn';
 
 /* ------------------------------------------------------------------ reference data */
 
+/** Role choices for the ROLE approver: company roles from GET /roles, or the built-in list when that fails. */
+export interface RoleOption { code: string; name: string | null; nameEn: string | null; custom: boolean; isActive: boolean }
+
 export interface WfRefs extends MasterData {
   types: OrgUnitTypeDto[];
   jobFamilies: JobFamilyDto[];
   positions: PositionDto[];
+  roles: RoleOption[];
+  /** True when GET /roles failed and only built-in roles are offered. */
+  rolesFallback: boolean;
+}
+
+const BUILT_IN_ROLES = COMPANY_ROLES as readonly string[];
+
+async function loadRoles(): Promise<{ roles: RoleOption[]; rolesFallback: boolean }> {
+  try {
+    const rows = await api<{ id: number; code: string; name: string; nameEn?: string | null; isSystem?: boolean; isActive?: boolean }[]>('GET', '/roles');
+    if (!Array.isArray(rows)) throw new Error('unexpected /roles payload');
+    return {
+      roles: rows.map((r) => ({ code: r.code, name: r.name, nameEn: r.nameEn ?? null, custom: !BUILT_IN_ROLES.includes(r.code), isActive: r.isActive !== false })),
+      rolesFallback: false,
+    };
+  } catch {
+    return { roles: BUILT_IN_ROLES.map((code) => ({ code, name: null, nameEn: null, custom: false, isActive: true })), rolesFallback: true };
+  }
+}
+
+/** Display name of a role code: company role name, else the built-in role translation, else the code. */
+export function roleName(code: string, refs: Pick<WfRefs, 'roles'> | null, t: (k: TKey) => string, lang: string): string {
+  const r = refs?.roles.find((x) => x.code === code);
+  if (r?.name) return lang === 'en' && r.nameEn ? r.nameEn : r.name;
+  return BUILT_IN_ROLES.includes(code) ? t(`roles.${code}` as TKey) : code;
 }
 
 export function useWfRefs() {
   const md = useMasterData({ users: true });
   const extra = useAsync(async () => {
-    const [types, jobFamilies, positions] = await Promise.all([
+    const [types, jobFamilies, positions, roles] = await Promise.all([
       api<OrgUnitTypeDto[]>('GET', '/org/types'),
       api<JobFamilyDto[]>('GET', '/org/job-families'),
       api<PositionDto[]>('GET', '/org/positions'),
+      loadRoles(),
     ]);
-    return { types, jobFamilies, positions };
+    return { types, jobFamilies, positions, ...roles };
   }, []);
   const data: WfRefs | null = md.data && extra.data ? { ...md.data, ...extra.data } : null;
   return { data, error: md.error ?? extra.error, loading: md.loading || extra.loading };
@@ -198,11 +287,17 @@ export function stepsChain(steps: WorkflowStepDto[], W: WfText, locale: string, 
   }).join(' → ');
 }
 
-export function approverLabel(type: ApproverType, cfg: ApproverConfig, refs: WfRefs | null, t: (k: TKey) => string): string {
+export function approverLabel(type: ApproverType, cfg: ApproverConfig, refs: WfRefs | null, t: (k: TKey) => string, lang = 'az'): string {
   const base = t(`approverType.${type}` as TKey);
+  if (type === 'ROLE' && cfg.role) return `${base}: ${roleName(cfg.role, refs, t, lang)}`;
   if (!refs) return base;
-  if (type === 'SPECIFIC_USER' && cfg.userId) return `${base}: ${refs.users.find((u) => u.id === cfg.userId)?.fullName ?? `#${cfg.userId}`}`;
-  if (type === 'ROLE' && cfg.role) return `${base}: ${t(`roles.${cfg.role}` as TKey)}`;
+  if (type === 'SPECIFIC_USER') {
+    const ids = configUserIds(cfg);
+    if (ids.length) {
+      const nm = ids.map((id) => refs.users.find((u) => u.id === id)?.fullName ?? `#${id}`);
+      return `${base}: ${nm.length > 3 ? `${nm.slice(0, 3).join(', ')} +${nm.length - 3}` : nm.join(', ')}`;
+    }
+  }
   if (type === 'POSITION_HOLDER') {
     const p = refs.positions.find((x) => x.id === cfg.positionId || (!cfg.positionId && x.code === cfg.positionCode));
     if (p) return `${base}: ${p.title}`;
@@ -466,24 +561,48 @@ export function ApproverFields({ type, config, onChange, refs, disabled, idPrefi
   type: ApproverType; config: ApproverConfig; onChange: (c: ApproverConfig) => void; refs: WfRefs | null; disabled?: boolean; idPrefix: string;
 }) {
   const W = useWfText();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   if (!refs) return null;
   const field = (label: string, node: (id: string) => ReactNode, hint?: string) => {
     const id = `${idPrefix}-${label}`;
     return <div className="field"><label htmlFor={id}>{label}</label>{node(id)}{hint && <small className="hint">{hint}</small>}</div>;
   };
   switch (type) {
-    case 'SPECIFIC_USER':
-      return field(W.cfgUser, (id) => (
-        <Select id={id} value={config.userId ?? ''} disabled={disabled} onChange={(e) => onChange({ userId: e.target.value ? Number(e.target.value) : undefined })}
-          options={[{ value: '', label: t('common.select') }, ...refs.users.filter((u) => u.isActive || u.id === config.userId)
-            .sort((a, b) => a.fullName.localeCompare(b.fullName)).map((u) => ({ value: u.id, label: `${u.fullName} · ${t(`roles.${u.role}` as TKey)}` }))]} />
-      ));
-    case 'ROLE':
+    case 'SPECIFIC_USER': {
+      const ids = configUserIds(config);
+      const set = (next: number[]) => onChange(next.length ? { userIds: next } : {});
+      const userLabel = (u: { fullName: string; role: string }) => `${u.fullName} · ${t(`roles.${u.role}` as TKey)}`;
+      return field(W.cfgUsers, (id) => (
+        <div className="cb-multi wfb-users">
+          {ids.map((uid) => {
+            const u = refs.users.find((x) => x.id === uid);
+            const name = u?.fullName ?? `#${uid}`;
+            return (
+              <span key={uid} className="cb-chip" title={u ? userLabel(u) : name}>
+                {name}
+                {!disabled && <button type="button" aria-label={W.removeUser.replace('{name}', name)} onClick={() => set(ids.filter((x) => x !== uid))}>×</button>}
+              </span>
+            );
+          })}
+          {!disabled && (
+            <Select id={id} value="" className="cb-add-select" aria-label={W.addUser}
+              onChange={(e) => { const v = Number(e.target.value); if (v && !ids.includes(v)) set([...ids, v]); }}
+              options={[{ value: '', label: W.addUser }, ...refs.users.filter((u) => u.isActive && !ids.includes(u.id))
+                .sort((a, b) => a.fullName.localeCompare(b.fullName)).map((u) => ({ value: u.id, label: userLabel(u) }))]} />
+          )}
+        </div>
+      ), W.cfgUsersHint);
+    }
+    case 'ROLE': {
+      const opts = refs.roles.filter((r) => r.isActive || r.code === config.role);
+      const known = !config.role || opts.some((r) => r.code === config.role);
       return field(W.cfgRole, (id) => (
         <Select id={id} value={config.role ?? ''} disabled={disabled} onChange={(e) => onChange({ role: e.target.value || undefined })}
-          options={[{ value: '', label: t('common.select') }, ...COMPANY_ROLES.map((r) => ({ value: r, label: t(`roles.${r}` as TKey) }))]} />
-      ));
+          options={[{ value: '', label: t('common.select') },
+            ...(known ? [] : [{ value: config.role!, label: config.role! }]),
+            ...opts.map((r) => ({ value: r.code, label: `${roleName(r.code, refs, t, lang)}${r.custom ? ` (${W.customRole})` : ''}` }))]} />
+      ), refs.rolesFallback ? W.rolesFallback : undefined);
+    }
     case 'DEPARTMENT_HEAD':
       return field(W.cfgUnitType, (id) => (
         <Select id={id} value={config.unitTypeCode ?? ''} disabled={disabled} onChange={(e) => onChange({ unitTypeCode: e.target.value || undefined })}
@@ -508,6 +627,88 @@ export function ApproverFields({ type, config, onChange, refs, disabled, idPrefi
     default:
       return null;
   }
+}
+
+/* ------------------------------------------------------------------ stage behaviour */
+
+export interface BehaviourChip { key: string; label: string; tone: 'info' | 'warning' | 'neutral' | 'muted' | 'dark'; title?: string }
+
+/** Short markers of a stage's non-default behaviour (mode, disabled actions, return path, comment, instructions). */
+export function behaviourChips(s: Partial<StepBehaviour>, W: WfText, opts: { approvers?: number; withAny?: boolean } = {}): BehaviourChip[] {
+  const b = stepBehaviour(s);
+  const out: BehaviourChip[] = [];
+  if (b.approvalMode === 'ALL') out.push({ key: 'mode', label: opts.approvers ? W.beh.allN.replace('{n}', String(opts.approvers)) : W.beh.all, tone: 'info', title: W.beh.all });
+  else if (opts.withAny) out.push({ key: 'mode', label: W.beh.any, tone: 'muted' });
+  if (!b.allowReject && !b.allowReturn) out.push({ key: 'only', label: W.beh.approveOnly, tone: 'warning' });
+  else {
+    if (!b.allowReject) out.push({ key: 'rej', label: W.beh.noReject, tone: 'warning' });
+    if (!b.allowReturn) out.push({ key: 'ret', label: W.beh.noReturn, tone: 'warning' });
+  }
+  if (b.allowReturn && b.returnTo === 'PREVIOUS_STEP') out.push({ key: 'prev', label: W.beh.returnPrev, tone: 'neutral' });
+  if (b.requireCommentOnApprove) out.push({ key: 'cmt', label: W.beh.commentReq, tone: 'neutral' });
+  if (b.instructions) out.push({ key: 'ins', label: W.beh.instructions, tone: 'muted', title: b.instructions });
+  return out;
+}
+
+export function BehaviourChips({ step, approvers, withAny }: { step: Partial<StepBehaviour>; approvers?: number; withAny?: boolean }) {
+  const W = useWfText();
+  const chips = behaviourChips(step, W, { approvers, withAny });
+  if (!chips.length) return null;
+  return <>{chips.map((c) => <span key={c.key} className={`badge badge-${c.tone} wf-beh`} title={c.title}>{c.label}</span>)}</>;
+}
+
+/**
+ * Compact visual flow: Requester → stage 1 → … → Approved, with conditions / thresholds,
+ * approval mode and where a return goes. Stages whose condition is not met for `ctx` are dimmed.
+ */
+export function FlowDiagram({ steps, refs, isIncluded }: {
+  steps: (Pick<WorkflowStepDto, 'name' | 'approverType' | 'approverConfig' | 'condition'> & Partial<StepBehaviour> & { key?: number | string })[];
+  refs: WfRefs | null;
+  /** Optional: evaluates each stage for the sample item of the live preview. */
+  isIncluded?: (index: number) => boolean;
+}) {
+  const W = useWfText();
+  const { t, locale, lang } = useI18n();
+  return (
+    <figure className="wff" aria-label={W.flow.title}>
+      <ol className="wff-row">
+        <li className="wff-node wff-start"><Icon name="request" /> {W.flow.requester}</li>
+        {steps.map((s, i) => {
+          const b = stepBehaviour(s);
+          const chip = stepConditionChip(s.condition, W, locale, t);
+          const included = isIncluded ? isIncluded(i) : true;
+          const users = s.approverType === 'SPECIFIC_USER' ? configUserIds(s.approverConfig).length : 0;
+          const prevIdx = i - 1;
+          return (
+            <li key={s.key ?? i} className={`wff-item${included ? '' : ' wff-off'}`}>
+              <span className="wff-arrow" aria-hidden="true">→</span>
+              <div className={`wff-node wff-stage${s.condition ? ' wff-cond' : ''}${b.approvalMode === 'ALL' ? ' wff-all' : ''}`}>
+                <span className="wff-num">{i + 1}</span>
+                <span className="wff-body">
+                  <strong>{s.name || '—'}</strong>
+                  <span className="wff-who">{approverLabel(s.approverType, s.approverConfig, refs, t, lang)}</span>
+                  <span className="wff-tags">
+                    {chip && <span className="wfl-chip" title={conditionText(s.condition, W, locale, t)}>{W.flow.conditional}: {chip}</span>}
+                    <BehaviourChips step={b} approvers={users || undefined} />
+                  </span>
+                  {b.allowReturn && (
+                    <span className="wff-return">
+                      {W.flow.returnTo.replace('{to}', b.returnTo === 'PREVIOUS_STEP' && prevIdx >= 0 ? W.flow.toStep.replace('{n}', String(prevIdx + 1)) : W.flow.toRequester)}
+                    </span>
+                  )}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+        <li className="wff-item">
+          <span className="wff-arrow" aria-hidden="true">→</span>
+          <div className="wff-node wff-end"><Icon name="check" /> {W.flow.approved}</div>
+        </li>
+      </ol>
+      {!steps.length && <p className="muted small">{W.flow.empty}</p>}
+    </figure>
+  );
 }
 
 export const approverTypeOptions = (t: (k: TKey) => string) => APPROVER_TYPES.map((a) => ({ value: a, label: t(`approverType.${a}` as TKey) }));

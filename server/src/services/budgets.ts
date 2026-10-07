@@ -1,5 +1,6 @@
+import { userCan } from '../lib/permissions';
 import {
-  applyUplift, can, SECTION_EDITABLE,
+  applyUplift, SECTION_EDITABLE,
   type BudgetDetailDto, type BudgetDto, type BudgetLineDto, type BudgetSectionDto, type BudgetVersionDto, type SectionStatus,
   type VersionDiffRow, type VersionKind, type VersionStatus,
 } from '@finbridge/shared';
@@ -135,15 +136,15 @@ function sectionsOf(versionId: number): Map<number, SectionRow> {
 }
 
 export function canEditSection(user: UserRow, version: VersionRow, section: SectionRow | undefined, scope: Scope, unitId: number): boolean {
-  if (version.status !== 'DRAFT' || !can(user.role, 'budget.edit')) return false;
+  if (version.status !== 'DRAFT' || !userCan(user, 'budget.edit')) return false;
   const status = section?.status ?? 'NOT_STARTED';
   if (!SECTION_EDITABLE.includes(status)) return false;
-  return can(user.role, 'budget.manage') || inScopeUnit(scope, unitId);
+  return userCan(user, 'budget.manage') || inScopeUnit(scope, unitId);
 }
 
 function canSubmitSection(user: UserRow, version: VersionRow, section: SectionRow, scope: Scope, org: OrgIndex): boolean {
-  if (version.status !== 'DRAFT' || !can(user.role, 'budget.submit') || !SECTION_EDITABLE.includes(section.status)) return false;
-  if (can(user.role, 'budget.manage')) return true;
+  if (version.status !== 'DRAFT' || !userCan(user, 'budget.submit') || !SECTION_EDITABLE.includes(section.status)) return false;
+  if (userCan(user, 'budget.manage')) return true;
   // the head of the section (or of an ancestor) submits it
   return org.ancestors(section.org_unit_id).some((u) => u.headUserId === user.id) && inScopeUnit(scope, section.org_unit_id);
 }
@@ -154,7 +155,7 @@ function assertLineEditable(user: UserRow, version: VersionRow, ccId: number, sc
   if (!canEditSection(user, version, sections.get(section.id), scope, section.id)) {
     throw new HttpError(409, 'BUDGET_NOT_EDITABLE', 'These budget lines cannot be edited in the current status');
   }
-  if (!can(user.role, 'budget.manage') && !inScopeCostCenter(scope, ccId)) throw forbidden();
+  if (!userCan(user, 'budget.manage') && !inScopeCostCenter(scope, ccId)) throw forbidden();
   return section.id;
 }
 
@@ -191,7 +192,7 @@ export function budgetDetail(user: UserRow, budget: BudgetRow, versionId?: numbe
         total: r2(t.total), lineCount: t.n, submittedAt: s.submitted_at, approvedAt: s.approved_at, workflowInstanceId: s.workflow_instance_id,
         canEdit: canEditSection(user, version, s, scope, u.id),
         canSubmit: t.n > 0 && canSubmitSection(user, version, s, scope, org),
-        canReopen: version.status === 'DRAFT' && can(user.role, 'budget.manage') && s.status === 'APPROVED',
+        canReopen: version.status === 'DRAFT' && userCan(user, 'budget.manage') && s.status === 'APPROVED',
       };
     })
     .sort((a, b) => a.code.localeCompare(b.code));
@@ -202,10 +203,10 @@ export function budgetDetail(user: UserRow, budget: BudgetRow, versionId?: numbe
     versions,
     version: versionDto(version, scope),
     sections: sectionDtos,
-    canSubmitVersion: version.status === 'DRAFT' && can(user.role, 'budget.manage') && withLines.length > 0 && withLines.every((s) => s.status === 'APPROVED'),
-    canLock: version.status === 'APPROVED' && can(user.role, 'budget.manage'),
-    canImport: version.status === 'DRAFT' && can(user.role, 'excel.import') && can(user.role, 'budget.manage'),
-    canCreateChange: version.status === 'LOCKED' && version.id === budget.current_version_id && can(user.role, 'change.create'),
+    canSubmitVersion: version.status === 'DRAFT' && userCan(user, 'budget.manage') && withLines.length > 0 && withLines.every((s) => s.status === 'APPROVED'),
+    canLock: version.status === 'APPROVED' && userCan(user, 'budget.manage'),
+    canImport: version.status === 'DRAFT' && userCan(user, 'excel.import') && userCan(user, 'budget.manage'),
+    canCreateChange: version.status === 'LOCKED' && version.id === budget.current_version_id && userCan(user, 'change.create'),
   };
 }
 
@@ -237,7 +238,7 @@ export function listLines(user: UserRow, budget: BudgetRow, versionId: number | 
       id: r.id, costCenterId: cc.id, costCenterCode: cc.code, costCenterName: cc.name, sectionUnitId: section.id, sectionName: section.name,
       accountId: acc.id, accountCode: acc.code, accountName: acc.name, expenseClass: accs.expenseClassOf(acc.id), description: r.description,
       months, total: r2(months.reduce((a, b) => a + b, 0)),
-      canEdit: canEditSection(user, version, sections.get(section.id), scope, section.id) && (can(user.role, 'budget.manage') || inScopeCostCenter(scope, cc.id)),
+      canEdit: canEditSection(user, version, sections.get(section.id), scope, section.id) && (userCan(user, 'budget.manage') || inScopeCostCenter(scope, cc.id)),
       updatedAt: r.updated_at, updatedBy: r.updated_by_name,
     });
   }
@@ -333,7 +334,7 @@ export function submitSection(user: UserRow, budget: BudgetRow, unitId: number):
 
 export function reopenSection(user: UserRow, budget: BudgetRow, unitId: number, comment: string | null): void {
   const version = loadVersion(budget);
-  if (!can(user.role, 'budget.manage')) throw forbidden();
+  if (!userCan(user, 'budget.manage')) throw forbidden();
   const section = sectionsOf(version.id).get(unitId);
   if (!section) throw notFound('Budget section');
   if (version.status !== 'DRAFT' || section.status !== 'APPROVED') throw new HttpError(409, 'INVALID_TRANSITION', 'Only approved sections of a draft version can be reopened');
@@ -343,7 +344,7 @@ export function reopenSection(user: UserRow, budget: BudgetRow, unitId: number, 
 
 export function submitVersion(user: UserRow, budget: BudgetRow): void {
   const version = loadVersion(budget);
-  if (!can(user.role, 'budget.manage')) throw forbidden();
+  if (!userCan(user, 'budget.manage')) throw forbidden();
   if (version.status !== 'DRAFT') throw new HttpError(409, 'INVALID_TRANSITION', 'Only draft versions can be submitted');
   const detail = budgetDetail(user, budget);
   const withLines = detail.sections.filter((s) => s.lineCount > 0);

@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { COMPANY_ROLES, type CompanyDto, type JobFamilyDto, type Lang, type OrgUnitDto, type Permission, type Role, type UserDto } from '@finbridge/shared';
+import { COMPANY_ROLES, type CompanyDto, type CompanyRoleDto, type JobFamilyDto, type Lang, type OrgUnitDto, type Permission, type Role, type UserDto } from '@finbridge/shared';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { Alert, Badge, Button, Card, Empty, ErrorMessage, ExportButton, Field, Icon, Input, Modal, PageHeader, Select, Spinner, Tabs } from '../../components/ui';
@@ -175,28 +175,29 @@ export function UsersPage() {
     <>
       <PageHeader title={L.title} subtitle={L.subtitle} actions={<BulkImportButton kind="USERS" onDone={() => setVersion((v) => v + 1)} />} />
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ value: 'users', label: L.tabUsers }, { value: 'roles', label: L.tabRoles }]} />
-      {tab === 'users' ? <UsersTab key={version} /> : <RolesTab />}
+      {tab === 'users' ? <UsersTab key={version} /> : <RolesLink />}
     </>
   );
 }
 
 /* ------------------------------------------------------------------ users */
 
-interface Refs { users: UserDto[]; units: OrgUnitDto[]; families: JobFamilyDto[]; company: CompanyDto }
+interface Refs { users: UserDto[]; units: OrgUnitDto[]; families: JobFamilyDto[]; company: CompanyDto; roles: CompanyRoleDto[] }
 
 function UsersTab() {
   const L = useLocal(TEXT);
   const { t, locale, lang } = useI18n();
-  const { user: me } = useAuth();
+  const { user: me, can } = useAuth();
   const dn = useDisplayName();
   const { data, error, loading, reload } = useAsync<Refs>(async () => {
-    const [users, units, families, company] = await Promise.all([
+    const [users, units, families, company, roles] = await Promise.all([
       api<UserDto[]>('GET', '/users'),
       api<OrgUnitDto[]>('GET', '/org/units'),
       api<JobFamilyDto[]>('GET', '/org/job-families'),
       api<CompanyDto>('GET', '/company'),
+      api<CompanyRoleDto[]>('GET', '/roles'),
     ]);
-    return { users, units, families, company };
+    return { users, units, families, company, roles };
   }, []);
   const [q, setQ] = useState('');
   const [role, setRole] = useState('');
@@ -210,7 +211,7 @@ function UsersTab() {
     if (!data) return [];
     const needle = q.trim().toLocaleLowerCase(locale);
     return data.users.filter((u) =>
-      (!role || u.role === role)
+      (!role || u.roleCode === role)
       && (active === '' || (active === 'active' ? u.isActive : !u.isActive))
       && (!needle || [u.fullName, u.email, u.jobTitle ?? ''].some((s) => s.toLocaleLowerCase(locale).includes(needle))));
   }, [data, q, role, active, locale]);
@@ -225,6 +226,13 @@ function UsersTab() {
   const famById = new Map(data.families.map((f) => [f.id, f]));
   const unitById = new Map(data.units.map((u) => [u.id, u]));
 
+  const canManage = can('users.manage');
+  const roleByCode = new Map(data.roles.map((r) => [r.code, r]));
+  const roleLabel = (code: string) => {
+    const r = roleByCode.get(code);
+    return r && !r.isSystem ? r.name : (COMPANY_ROLES as readonly string[]).includes(code) ? t(`roles.${code as Role}`) : r?.name ?? code;
+  };
+
   const toggle = async (u: UserDto, isActive: boolean) => {
     setRowBusy(u.id); setRowError(null);
     try { await api('PATCH', `/users/${u.id}`, { isActive }); await reload(); } catch (e) { setRowError(e); } finally { setRowBusy(null); }
@@ -237,7 +245,7 @@ function UsersTab() {
         <div className="table-toolbar">
           <Input type="search" aria-label={t('common.search')} placeholder={L.searchPh} value={q} onChange={(e) => setQ(e.target.value)} />
           <Select aria-label={t('common.role')} value={role} onChange={(e) => setRole(e.target.value)}
-            options={[{ value: '', label: L.allRoles }, ...COMPANY_ROLES.map((r) => ({ value: r, label: t(`roles.${r}`) }))]} />
+            options={[{ value: '', label: L.allRoles }, ...data.roles.map((r) => ({ value: r.code, label: roleLabel(r.code) }))]} />
           <Select aria-label={t('common.status')} value={active} onChange={(e) => setActive(e.target.value)}
             options={[{ value: 'active', label: L.activeOnly }, { value: 'inactive', label: L.inactiveOnly }, { value: '', label: t('common.all') }]} />
           <span className="muted small">{fmt(L.shown, { n: rows.length, total: data.users.length })}</span>
@@ -249,9 +257,9 @@ function UsersTab() {
               </div>
             </div>
             <ExportButton path="/export/users" filename="finbridge-users.xlsx" />
-            <Button variant="primary" disabled={seatsFull} title={seatsFull ? L.seatsFullShort : undefined} onClick={() => setEditing('new')}>
+            {canManage && <Button variant="primary" disabled={seatsFull} title={seatsFull ? L.seatsFullShort : undefined} onClick={() => setEditing('new')}>
               <Icon name="plus" /> {L.newUser}
-            </Button>
+            </Button>}
           </div>
         </div>
         {rowError ? <div className="card-body"><ErrorMessage error={rowError} /></div> : null}
@@ -271,7 +279,7 @@ function UsersTab() {
                     <tr key={u.id}>
                       <td><b>{u.fullName}</b>{isSelf && <> <Badge tone="info">{L.self}</Badge></>}</td>
                       <td className="muted">{u.email}</td>
-                      <td className="sec-nowrap">{t(`roles.${u.role}`)}</td>
+                      <td className="sec-nowrap">{roleLabel(u.roleCode)}</td>
                       <td>{unit ? dn(unit) : u.orgUnitName ?? '—'}{unit && <span className="sec-cell-sub">{unit.code}</span>}</td>
                       <td>{u.managerId ? byId.get(u.managerId)?.fullName ?? '—' : '—'}</td>
                       <td>{u.jobFamilyId ? famById.get(u.jobFamilyId)?.name ?? '—' : '—'}</td>
@@ -281,8 +289,8 @@ function UsersTab() {
                       <td className="sec-nowrap muted">{u.lastLoginAt ? date(u.lastLoginAt, locale, true) : L.never}</td>
                       <td className="r">
                         <div className="row-actions">
-                          <Button size="sm" variant="ghost" onClick={() => setEditing(u)}>{t('common.edit')}</Button>
-                          {u.isActive
+                          {canManage && <Button size="sm" variant="ghost" onClick={() => setEditing(u)}>{t('common.edit')}</Button>}
+                          {!canManage ? null : u.isActive
                             ? <Button size="sm" variant="ghost" disabled={isSelf} title={isSelf ? L.selfLocked : undefined}
                                 busy={rowBusy === u.id} onClick={() => setConfirm(u)}>{t('common.deactivate')}</Button>
                             : <Button size="sm" variant="ghost" disabled={seatsFull} title={seatsFull ? L.seatsFullShort : undefined}
@@ -320,7 +328,7 @@ function UserModal({ user, refs, isSelf, lang, onClose, onSaved }: {
   const { t } = useI18n();
   const dn = useDisplayName();
   const [f, setF] = useState({
-    fullName: user?.fullName ?? '', email: user?.email ?? '', role: (user?.role ?? 'EMPLOYEE') as Role,
+    fullName: user?.fullName ?? '', email: user?.email ?? '', role: user?.roleCode ?? 'EMPLOYEE',
     orgUnitId: user?.orgUnitId ? String(user.orgUnitId) : '', managerId: user?.managerId ? String(user.managerId) : '',
     jobFamilyId: user?.jobFamilyId ? String(user.jobFamilyId) : '', jobTitle: user?.jobTitle ?? '',
     language: (user?.language ?? lang) as Lang, password: '',
@@ -367,7 +375,7 @@ function UserModal({ user, refs, isSelf, lang, onClose, onSaved }: {
       <div className="grid-2">
         <Field label={t('common.role')} hint={isSelf ? L.selfLocked : L.roleHint}>
           {(id) => <Select id={id} value={f.role} onChange={set('role')} disabled={isSelf}
-            options={COMPANY_ROLES.map((r) => ({ value: r, label: t(`roles.${r}`) }))} />}
+            options={refs.roles.filter((r) => r.isActive || r.code === f.role).map((r) => ({ value: r.code, label: r.isSystem ? t(`roles.${r.code as Role}`) : r.name }))} />}
         </Field>
         <Field label={t('common.unit')}>
           {(id) => <Select id={id} value={f.orgUnitId} onChange={set('orgUnitId')}
@@ -402,59 +410,18 @@ function UserModal({ user, refs, isSelf, lang, onClose, onSaved }: {
 
 /* ------------------------------------------------------------------ roles */
 
-interface RolesDto { roles: Role[]; permissions: Permission[]; matrix: Record<Role, Permission[]> }
+const rolesLinkText = {
+  az: { body: 'Rollar artıq konfiqurasiya olunur: hər rol üçün görünən səhifələri, redaktə hüquqlarını və məlumat görünürlüyünü təyin edin, yeni rollar yaradın.', open: 'Rollar və səlahiyyətlər səhifəsini aç' },
+  en: { body: 'Roles are configurable: define visible pages, edit rights and data visibility for each role, and create new roles.', open: 'Open Roles & permissions' },
+};
 
-function RolesTab() {
-  const L = useLocal(TEXT);
-  const { t, lang } = useI18n();
-  const { data, error, loading } = useAsync(() => api<RolesDto>('GET', '/users/roles'), []);
-  if (loading && !data) return <Spinner />;
-  if (error || !data) return <ErrorMessage error={error} />;
-
-  const known = new Set(PERM_GROUPS.flatMap((g) => g.perms));
-  const groups = [...PERM_GROUPS.map((g) => ({ label: L[g.key], perms: g.perms.filter((p) => data.permissions.includes(p)) })),
-    { label: '—', perms: data.permissions.filter((p) => !known.has(p)) }].filter((g) => g.perms.length);
-
+function RolesLink() {
+  const L = useLocal(rolesLinkText);
   return (
-    <>
-      <Alert kind="info">
-        <b>{L.approvalNote}</b> <Link to="/admin/workflows">{L.workflowsLink} →</Link>
-      </Alert>
-      <Card flush title={L.matrixTitle} subtitle={L.matrixSub}>
-        <div className="table-scroll">
-          <table className="table sec-matrix">
-            <thead><tr>
-              <th>{L.permission}</th>
-              {data.roles.map((r) => <th key={r} className="sec-role" scope="col">{t(`roles.${r}`)}</th>)}
-            </tr></thead>
-            <tbody>
-              {groups.map((g) => (
-                <FragmentRows key={g.label} label={g.label} span={data.roles.length + 1}>
-                  {g.perms.map((p) => (
-                    <tr key={p}>
-                      <td className="sec-perm">
-                        <div>{PERM_TEXT[lang][p] ?? p}</div>
-                        <code>{p}</code>
-                      </td>
-                      {data.roles.map((r) => {
-                        const yes = data.matrix[r]?.includes(p);
-                        return (
-                          <td key={r} className="sec-tick">
-                            {yes ? <span className="sec-yes" role="img" aria-label={L.has}>✓</span>
-                              : <span className="sec-no" role="img" aria-label={L.hasNot}>·</span>}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </FragmentRows>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-      <p className="muted small">{L.scopeNote}</p>
-    </>
+    <Card>
+      <p>{L.body}</p>
+      <Link className="btn btn-primary" to="/admin/roles"><Icon name="lock" /> {L.open}</Link>
+    </Card>
   );
 }
 

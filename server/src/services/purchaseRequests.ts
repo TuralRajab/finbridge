@@ -1,3 +1,4 @@
+import { userCan } from '../lib/permissions';
 import {
   can, REQUEST_EDITABLE, toBase,
   type PurchaseRequestDto, type RequestStatus, type RequestType,
@@ -57,7 +58,7 @@ export function canViewPr(user: UserRow, pr: PrRow, scope: Scope): boolean {
 }
 
 function validate(user: UserRow, input: PrInput, scope: Scope): { rate: number } {
-  if (!can(user.role, 'request.create')) throw forbidden();
+  if (!userCan(user, 'request.create')) throw forbidden();
   const org = OrgIndex.load(user.company_id!);
   const cc = org.cc(input.costCenterId);
   if (!cc.isActive) throw badRequest('VALIDATION_ERROR', 'Cost center is inactive');
@@ -143,7 +144,7 @@ export function cancelPr(user: UserRow, pr: PrRow, comment: string | null): void
 
 /** Records spend against an approved request. Fully spent requests close and release their commitment. */
 export function recordPrActual(user: UserRow, pr: PrRow, input: { amount: number; month: number; description: string | null; close: boolean }): void {
-  if (!can(user.role, 'actuals.manage')) throw forbidden();
+  if (!userCan(user, 'actuals.manage')) throw forbidden();
   if (pr.status !== 'APPROVED') throw new HttpError(409, 'INVALID_TRANSITION', 'Actuals can only be recorded on approved requests');
   tx(() => {
     const ts = nowIso();
@@ -177,7 +178,7 @@ export function prDto(user: UserRow, pr: PrRow): PurchaseRequestDto {
     canEdit: own && REQUEST_EDITABLE.includes(pr.status),
     canSubmit: own && REQUEST_EDITABLE.includes(pr.status),
     canCancel: own && (REQUEST_EDITABLE.includes(pr.status) || pr.status === 'IN_APPROVAL'),
-    canRecordActual: pr.status === 'APPROVED' && can(user.role, 'actuals.manage'),
+    canRecordActual: pr.status === 'APPROVED' && userCan(user, 'actuals.manage'),
   };
 }
 

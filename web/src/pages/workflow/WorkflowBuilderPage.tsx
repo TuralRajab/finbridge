@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  WORKFLOW_TYPES, evaluateCondition,
-  type ApproverConfig, type ApproverType, type Condition, type WorkflowDefinitionDto, type WorkflowPreviewDto, type WorkflowStepDto, type WorkflowType,
+  DEFAULT_STEP_BEHAVIOUR, WORKFLOW_TYPES, configUserIds, evaluateCondition, stepBehaviour,
+  type ApproverConfig, type ApproverType, type Condition, type StepBehaviour, type WorkflowDefinitionDto, type WorkflowPreviewDto, type WorkflowStepDto, type WorkflowType,
 } from '@finbridge/shared';
 import '../../styles/workflow.css';
 import { api } from '../../api/client';
@@ -12,7 +12,7 @@ import { date } from '../../lib/format';
 import { useAsync } from '../../lib/useAsync';
 import { Badge, Button, Card, ErrorMessage, Field, Icon, Input, Modal, PageHeader, Select, Spinner } from '../../components/ui';
 import {
-  ApproverFields, approverLabel, approverTypeOptions, ConditionBuilder, conditionText, effectiveState, EMPTY_SAMPLE, previewBody,
+  ApproverFields, approverLabel, approverTypeOptions, BehaviourChips, ConditionBuilder, conditionText, effectiveState, EMPTY_SAMPLE, FlowDiagram, previewBody,
   SampleForm, sampleContext, ServerErrors, stepConditionChip, useWfRefs, useWfText, type SampleInput, type WfRefs,
 } from './wfCommon';
 
@@ -98,6 +98,35 @@ const az = {
   cloneDone: 'Kopya yaradıldı (deaktiv).',
   leaveTitle: 'Dəyişikliklər itəcək',
   confirmRemove: '«{name}» mərhələsi silinsin?',
+  behaviour: 'Mərhələnin davranışı',
+  behaviourSub: 'Bu mərhələdə təsdiqləyən nə edə bilər və mərhələ nə vaxt tamamlanır.',
+  modeLabel: 'Mərhələ nə vaxt təsdiqlənmiş sayılır?',
+  modeAny: 'Təsdiqləyənlərdən birinin təsdiqi kifayətdir',
+  modeAnyHint: 'Ən çevik variant: kim birinci təsdiqləsə, sənəd növbəti mərhələyə keçir.',
+  modeAll: 'Hamısı təsdiqləməlidir (komitə)',
+  modeAllHint: 'Təyin olunmuş hər şəxs ayrıca təsdiqləməlidir; bir nəfərin rəddi və ya qaytarması mərhələni bitirir. Səlahiyyət ötürülmüş şəxs əvəz etdiyi şəxsin adına qərar verir.',
+  actionsLabel: 'Təsdiqləyən nə edə bilər?',
+  allowReject: 'Sənədi rədd edə bilər',
+  allowRejectHint: 'Söndürülərsə, «Rədd et» düyməsi göstərilmir (məs. Maliyyə yalnız yoxlayır və qaytarır).',
+  allowReturn: 'Sənədi düzəlişə qaytara bilər',
+  returnToLabel: 'Qaytarılan sənəd hara gedir?',
+  returnRequester: 'Göndərənə (sənəd düzəliş üçün açılır)',
+  returnPrevious: 'Əvvəlki mərhələyə (həmin mərhələ yenidən baxır)',
+  returnPreviousHint: 'Əvvəlki təsdiqlənmiş mərhələ yenidən açılır, sənəd təsdiqdə qalır.',
+  returnPreviousFirst: 'Bu ilk mərhələdir — əvvəlki mərhələ olmadığı üçün sənəd göndərənə qaytarılacaq.',
+  approveOnlyWarn: 'Nə rədd, nə də qaytarma mümkündür — təsdiqləyən yalnız təsdiqləyə bilər.',
+  commentOnApprove: 'Təsdiq zamanı şərh yazmaq məcburidir',
+  commentOnApproveHint: 'Məsələn, komitə üzvü qərarını əsaslandırmalıdır.',
+  instructions: 'Təsdiqləyən üçün təlimat',
+  instructionsHint: 'Təsdiq panelində göstərilir. Məsələn: «Satınalma siyasətinə uyğunluğu yoxlayın».',
+  allNeedsMany: 'Diqqət: «hamısı təsdiqləməlidir» rejimi bir neçə təsdiqləyən olduqda mənalıdır.',
+  presets: 'Hazır mərhələlər',
+  presetsSub: 'Tipik mərhələni bir kliklə əlavə edin, sonra lazım olarsa dəyişin.',
+  presetAdded: '«{name}» mərhələsi əlavə edildi.',
+  errUsers: '{step}: ən azı bir istifadəçi seçin.',
+  errInstructions: '{step}: təlimat 2000 simvoldan uzun ola bilməz.',
+  flowTitle: 'Axının sxemi',
+  previewAll: 'hamısı təsdiqləməlidir',
 };
 const TEXT = {
   az,
@@ -183,6 +212,35 @@ const TEXT = {
     cloneDone: 'Copy created (inactive).',
     leaveTitle: 'Changes will be lost',
     confirmRemove: 'Remove step “{name}”?',
+    behaviour: 'Stage behaviour',
+    behaviourSub: 'What the approver may do at this stage and when the stage is complete.',
+    modeLabel: 'When is the stage approved?',
+    modeAny: 'One approver\'s approval is enough',
+    modeAnyHint: 'Most flexible: whoever approves first moves the document to the next stage.',
+    modeAll: 'Everyone must approve (committee)',
+    modeAllHint: 'Every assigned person approves separately; one rejection or return ends the stage. A delegate decides for the person they act for.',
+    actionsLabel: 'What may the approver do?',
+    allowReject: 'May reject the document',
+    allowRejectHint: 'When off, the “Reject” button is hidden (e.g. Finance only checks and returns).',
+    allowReturn: 'May return the document for corrections',
+    returnToLabel: 'Where does a returned document go?',
+    returnRequester: 'To the requester (the document reopens for corrections)',
+    returnPrevious: 'To the previous stage (that stage reviews it again)',
+    returnPreviousHint: 'The previous approved stage is reopened; the document stays in approval.',
+    returnPreviousFirst: 'This is the first stage — with no previous stage the document goes back to the requester.',
+    approveOnlyWarn: 'Neither reject nor return is possible — the approver can only approve.',
+    commentOnApprove: 'A comment is required to approve',
+    commentOnApproveHint: 'For example, a committee member must justify the decision.',
+    instructions: 'Instructions for the approver',
+    instructionsHint: 'Shown in the approval panel. For example: “Check against the procurement policy”.',
+    allNeedsMany: 'Note: “everyone must approve” makes sense when the stage has several approvers.',
+    presets: 'Stage presets',
+    presetsSub: 'Add a typical stage in one click, then adjust it if needed.',
+    presetAdded: 'Stage “{name}” added.',
+    errUsers: '{step}: choose at least one user.',
+    errInstructions: '{step}: instructions cannot exceed 2000 characters.',
+    flowTitle: 'Flow diagram',
+    previewAll: 'everyone must approve',
   } satisfies typeof az,
 };
 type Txt = typeof az;
@@ -195,7 +253,53 @@ interface Draft {
 
 let stepKey = 1;
 const toDraftStep = (s: WorkflowStepDto): DraftStep => ({ ...s, approverConfig: { ...s.approverConfig }, key: stepKey++, condOn: !!s.condition });
-const blankStep = (name: string): DraftStep => ({ seq: 0, name, approverType: 'DYNAMIC_MANAGER', approverConfig: {}, condition: null, slaHours: 48, escalation: null, key: stepKey++, condOn: false });
+const blankStep = (name: string, p: Partial<WorkflowStepDto> = {}): DraftStep => ({
+  seq: 0, name, approverType: 'DYNAMIC_MANAGER', approverConfig: {}, condition: null, slaHours: 48, escalation: null, ...DEFAULT_STEP_BEHAVIOUR,
+  ...p, key: stepKey++, condOn: !!p.condition,
+});
+
+/* ------------------------------------------------------------------ stage presets */
+
+type PresetId = 'deptHead' | 'financeCheck' | 'cfo' | 'ceo' | 'committee' | 'users';
+const PRESET_IDS: PresetId[] = ['deptHead', 'financeCheck', 'cfo', 'ceo', 'committee', 'users'];
+const presetAz: Record<PresetId, { label: string; hint: string; name: string; instructions?: string }> = {
+  deptHead: { label: 'Departament rəhbərinin təsdiqi', hint: 'Sənədin departamentinin rəhbəri, SLA 48 saat', name: 'Departament rəhbəri' },
+  financeCheck: {
+    label: 'Maliyyə yoxlaması (yalnız qaytara bilər)', hint: 'Rədd edə bilməz, əvvəlki mərhələyə qaytarır', name: 'Maliyyə yoxlaması',
+    instructions: 'Büdcədə nəzərdə tutulmasını, xərc maddəsinin düzgünlüyünü və sənədlərin tamlığını yoxlayın.',
+  },
+  cfo: { label: 'CFO təsdiqi ≥ 10 000', hint: 'Yalnız məbləğ ≥ 10 000 olduqda', name: 'CFO' },
+  ceo: { label: 'CEO təsdiqi ≥ 100 000', hint: 'Yalnız məbləğ ≥ 100 000 olduqda', name: 'CEO' },
+  committee: { label: 'Komitə — hamısı təsdiqləməlidir', hint: 'Konkret üzvlər; hər biri şərhlə təsdiqləyir', name: 'Komitə', instructions: 'Qərarınızı şərhdə əsaslandırın.' },
+  users: { label: 'Konkret istifadəçilər…', hint: 'Seçdiyiniz şəxslərdən biri təsdiqləyir', name: 'Təsdiqləyənlər' },
+};
+const PRESET_TEXT = {
+  az: presetAz,
+  en: {
+    deptHead: { label: 'Department head approval', hint: 'Head of the document\'s department, SLA 48 h', name: 'Department head' },
+    financeCheck: {
+      label: 'Finance check (return only)', hint: 'Cannot reject, returns to the previous stage', name: 'Finance check',
+      instructions: 'Check that it is budgeted, that the expense account is correct and that the documents are complete.',
+    },
+    cfo: { label: 'CFO approval ≥ 10 000', hint: 'Only when the amount is ≥ 10 000', name: 'CFO' },
+    ceo: { label: 'CEO approval ≥ 100 000', hint: 'Only when the amount is ≥ 100 000', name: 'CEO' },
+    committee: { label: 'Committee — everyone must approve', hint: 'Named members; each approves with a comment', name: 'Committee', instructions: 'Justify your decision in the comment.' },
+    users: { label: 'Specific users…', hint: 'One of the people you choose approves', name: 'Approvers' },
+  } satisfies typeof presetAz,
+};
+
+function presetStep(id: PresetId, P: typeof presetAz): DraftStep {
+  const txt = P[id];
+  const amount = (v: number): Condition => ({ all: [{ field: 'amount', op: 'gte', value: v }] });
+  switch (id) {
+    case 'deptHead': return blankStep(txt.name, { approverType: 'DEPARTMENT_HEAD', slaHours: 48 });
+    case 'financeCheck': return blankStep(txt.name, { approverType: 'FINANCE_MANAGER', slaHours: 48, allowReject: false, returnTo: 'PREVIOUS_STEP', instructions: txt.instructions ?? null });
+    case 'cfo': return blankStep(txt.name, { approverType: 'CFO', slaHours: 72, condition: amount(10000) });
+    case 'ceo': return blankStep(txt.name, { approverType: 'CEO', slaHours: 72, condition: amount(100000) });
+    case 'committee': return blankStep(txt.name, { approverType: 'SPECIFIC_USER', slaHours: 72, approvalMode: 'ALL', requireCommentOnApprove: true, instructions: txt.instructions ?? null });
+    case 'users': return blankStep(txt.name, { approverType: 'SPECIFIC_USER', slaHours: 48 });
+  }
+}
 
 function toDraft(d: WorkflowDefinitionDto): Draft {
   return {
@@ -213,12 +317,13 @@ function payload(d: Draft) {
     steps: d.steps.map((s, i) => ({
       seq: i + 1, name: s.name.trim(), approverType: s.approverType, approverConfig: s.approverConfig,
       condition: s.condOn ? s.condition : null, slaHours: s.slaHours, escalation: s.escalation,
+      ...stepBehaviour(s),
     })),
   };
 }
 
 function cfgError(type: ApproverType, cfg: ApproverConfig): 'user' | 'role' | 'position' | null {
-  if (type === 'SPECIFIC_USER' && !cfg.userId) return 'user';
+  if (type === 'SPECIFIC_USER' && !configUserIds(cfg).length) return 'user';
   if (type === 'ROLE' && !cfg.role) return 'role';
   if (type === 'POSITION_HOLDER' && !cfg.positionId && !cfg.positionCode) return 'position';
   return null;
@@ -235,7 +340,8 @@ function validate(d: Draft, L: Txt): string[] {
     const step = `${i + 1}. ${s.name.trim() || '—'}`;
     if (!s.name.trim()) out.push(fmt(L.errStepName, { step }));
     const e = cfgError(s.approverType, s.approverConfig);
-    if (e) out.push(fmt(e === 'user' ? L.errUser : e === 'role' ? L.errRole : L.errPosition, { step }));
+    if (e) out.push(fmt(e === 'user' ? L.errUsers : e === 'role' ? L.errRole : L.errPosition, { step }));
+    if ((s.instructions ?? '').trim().length > 2000) out.push(fmt(L.errInstructions, { step }));
     if (s.escalation) {
       const ee = cfgError(s.escalation.approverType, s.escalation.config);
       if (ee) out.push(fmt(ee === 'user' ? L.errEscUser : ee === 'role' ? L.errEscRole : L.errEscPosition, { step }));
@@ -410,6 +516,8 @@ function Builder({ initial, refs }: { initial: WorkflowDefinitionDto | null; ref
           </Card>
 
           <Card title={L.steps} subtitle={L.stepsSub}>
+            <FlowDiagram refs={refs} steps={draft.steps.map((s) => ({ ...s, condition: s.condOn ? s.condition : null }))} />
+            {!readOnly && <Presets disabled={draft.steps.length >= 20} onAdd={(st) => { setDraft((d) => ({ ...d, steps: [...d.steps, st] })); setNotice(null); }} />}
             <ol className="wfb-flow">
               <li className="wfb-node"><Icon name="request" /> {L.start}</li>
               {draft.steps.map((s, i) => (
@@ -448,24 +556,49 @@ function Builder({ initial, refs }: { initial: WorkflowDefinitionDto | null; ref
   );
 }
 
+function Presets({ onAdd, disabled }: { onAdd: (s: DraftStep) => void; disabled: boolean }) {
+  const L = useLocal(TEXT);
+  const P = useLocal(PRESET_TEXT);
+  const [added, setAdded] = useState<string | null>(null);
+  return (
+    <div className="wfb-presets" role="group" aria-label={L.presets}>
+      <div className="wfb-presets-head"><strong>{L.presets}</strong> <span className="muted small">{L.presetsSub}</span></div>
+      <div className="wfb-presets-list">
+        {PRESET_IDS.map((id) => (
+          <button key={id} type="button" className="wfb-preset" disabled={disabled} title={P[id].hint}
+            onClick={() => { onAdd(presetStep(id, P)); setAdded(fmt(L.presetAdded, { name: P[id].name })); }}>
+            <Icon name="plus" /> <span><b>{P[id].label}</b><small>{P[id].hint}</small></span>
+          </button>
+        ))}
+      </div>
+      {added && <p className="small muted" role="status">{added}</p>}
+    </div>
+  );
+}
+
 function StepCard({ step: s, index: i, count, refs, readOnly, L, onChange, onMove, onRemove }: {
   step: DraftStep; index: number; count: number; refs: WfRefs; readOnly: boolean; L: Txt;
   onChange: (p: Partial<DraftStep>) => void; onMove: (dir: -1 | 1) => void; onRemove: () => void;
 }) {
   const W = useWfText();
-  const { t, locale } = useI18n();
+  const { t, locale, lang } = useI18n();
   const chip = s.condOn ? stepConditionChip(s.condition, W, locale, t) : '';
   const idp = `step-${s.key}`;
+  const b = stepBehaviour(s);
+  const setB = (p: Partial<StepBehaviour>) => onChange(p);
+  const singleApprover = (s.approverType === 'SPECIFIC_USER' && configUserIds(s.approverConfig).length === 1)
+    || ['CEO', 'CFO', 'DEPARTMENT_HEAD', 'ORG_UNIT_OWNER', 'EXECUTIVE', 'POSITION_HOLDER', 'DYNAMIC_MANAGER'].includes(s.approverType);
   return (
     <section className="wfb-step" aria-label={`${i + 1}. ${s.name}`}>
       <header className="wfb-step-head">
         <span className="wfb-num" aria-hidden="true">{i + 1}</span>
         <div className="wfb-step-title">
           <strong>{s.name || '—'}</strong>
-          <span className="muted small">{approverLabel(s.approverType, s.approverConfig, refs, t)}</span>
+          <span className="muted small">{approverLabel(s.approverType, s.approverConfig, refs, t, lang)}</span>
         </div>
         <div className="wfb-chips">
           {chip && <span className="wfl-chip" title={conditionText(s.condition, W, locale, t)}>{chip}</span>}
+          <BehaviourChips step={b} />
           {s.slaHours && <Badge tone="neutral">SLA {s.slaHours}h</Badge>}
           {s.escalation && <Badge tone="warning">↗ {t(`approverType.${s.escalation.approverType}` as TKey)}</Badge>}
         </div>
@@ -524,6 +657,53 @@ function StepCard({ step: s, index: i, count, refs, readOnly, L, onChange, onMov
             <p className="wfb-explain small">{W.explain[s.escalation.approverType]}</p>
           </div>
         )}
+
+        <fieldset className="wfb-beh">
+          <legend>{L.behaviour}</legend>
+          <p className="small muted wfb-beh-sub">{L.behaviourSub}</p>
+          <div className="wfb-beh-grid">
+            <div role="radiogroup" aria-label={L.modeLabel} className="wfb-beh-group">
+              <div className="wfb-beh-q">{L.modeLabel}</div>
+              <label className="check wfb-check-hint">
+                <input type="radio" name={`${idp}-mode`} checked={b.approvalMode === 'ANY'} onChange={() => setB({ approvalMode: 'ANY' })} />
+                <span>{L.modeAny}<small className="hint">{L.modeAnyHint}</small></span>
+              </label>
+              <label className="check wfb-check-hint">
+                <input type="radio" name={`${idp}-mode`} checked={b.approvalMode === 'ALL'} onChange={() => setB({ approvalMode: 'ALL' })} />
+                <span>{L.modeAll}<small className="hint">{L.modeAllHint}</small></span>
+              </label>
+              {b.approvalMode === 'ALL' && singleApprover && <p className="small wfp-warn"><Icon name="alert" /> {L.allNeedsMany}</p>}
+            </div>
+            <div className="wfb-beh-group">
+              <div className="wfb-beh-q">{L.actionsLabel}</div>
+              <label className="check wfb-check-hint">
+                <input type="checkbox" checked={b.allowReject} onChange={(e) => setB({ allowReject: e.target.checked })} />
+                <span>{L.allowReject}<small className="hint">{L.allowRejectHint}</small></span>
+              </label>
+              <label className="check"><input type="checkbox" checked={b.allowReturn} onChange={(e) => setB({ allowReturn: e.target.checked })} /> {L.allowReturn}</label>
+              {b.allowReturn && (
+                <div role="radiogroup" aria-label={L.returnToLabel} className="wfb-sub wfb-beh-return">
+                  <div className="small wfb-beh-q">{L.returnToLabel}</div>
+                  <label className="check">
+                    <input type="radio" name={`${idp}-ret`} checked={b.returnTo === 'REQUESTER'} onChange={() => setB({ returnTo: 'REQUESTER' })} /> {L.returnRequester}
+                  </label>
+                  <label className="check wfb-check-hint">
+                    <input type="radio" name={`${idp}-ret`} checked={b.returnTo === 'PREVIOUS_STEP'} onChange={() => setB({ returnTo: 'PREVIOUS_STEP' })} />
+                    <span>{L.returnPrevious}<small className="hint">{i === 0 ? L.returnPreviousFirst : L.returnPreviousHint}</small></span>
+                  </label>
+                </div>
+              )}
+              {!b.allowReject && !b.allowReturn && <p className="small wfp-warn"><Icon name="alert" /> {L.approveOnlyWarn}</p>}
+              <label className="check wfb-check-hint">
+                <input type="checkbox" checked={b.requireCommentOnApprove} onChange={(e) => setB({ requireCommentOnApprove: e.target.checked })} />
+                <span>{L.commentOnApprove}<small className="hint">{L.commentOnApproveHint}</small></span>
+              </label>
+            </div>
+          </div>
+          <Field label={<>{L.instructions} <span className="muted">({t('common.optional')})</span></>} hint={L.instructionsHint}>
+            {(fid) => <textarea id={fid} className="input textarea" rows={2} maxLength={2000} value={s.instructions ?? ''} onChange={(e) => setB({ instructions: e.target.value })} />}
+          </Field>
+        </fieldset>
       </div>
     </section>
   );
@@ -590,15 +770,17 @@ function LivePreview({ draft, saved, dirty, refs, L }: { draft: Draft; saved: Wo
           const included = evaluateCondition(s.condOn ? s.condition : null, ctx);
           const srv = server?.own?.steps[i];
           const sameStep = srv && srv.name === s.name.trim() && srv.approverType === s.approverType;
+          const b = stepBehaviour(s);
           return (
             <li key={s.key} className={included ? (sameStep && !srv!.approvers.length ? 'is-warn' : 'is-ok') : 'is-skip'}>
               <span className="wfp-dot" aria-hidden="true">{included ? i + 1 : '–'}</span>
               <div>
                 <div className="wfp-name">{s.name || '—'} <span className="muted small">· {t(`approverType.${s.approverType}` as TKey)}</span></div>
+                {included && <div className="wfp-beh"><BehaviourChips step={b} approvers={sameStep && srv!.included ? srv!.approvers.length || undefined : undefined} /></div>}
                 {!included ? <div className="small muted">{L.skipped}</div>
                   : sameStep && srv!.included
                     ? srv!.approvers.length
-                      ? <div className="small">{L.approvers}: <strong>{srv!.approvers.join(', ')}</strong></div>
+                      ? <div className="small">{L.approvers}{b.approvalMode === 'ALL' ? ` (${L.previewAll})` : ''}: <strong>{srv!.approvers.join(', ')}</strong></div>
                       : <div className="small wfp-warn"><Icon name="alert" /> {L.noApprover}</div>
                     : <div className="small muted">{L.included} · {L.approvers}: {L.unresolved}</div>}
               </div>

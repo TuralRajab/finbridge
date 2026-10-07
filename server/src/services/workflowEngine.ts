@@ -1,7 +1,7 @@
 import {
-  conditionWeight, evaluateCondition,
-  type ApproverConfig, type ApproverType, type Condition, type InboxItemDto, type InstanceStatus, type RuleContext, type TaskAction,
-  type WorkflowEntity, type WorkflowInstanceDto, type WorkflowPreviewDto, type WorkflowType,
+  conditionWeight, configUserIds, evaluateCondition, stepBehaviour,
+  type ApproverConfig, type ApproverType, type AssigneeDecision, type Condition, type InboxItemDto, type InstanceStatus, type RuleContext,
+  type StepBehaviour, type TaskAction, type WorkflowEntity, type WorkflowInstanceDto, type WorkflowPreviewDto, type WorkflowTaskDto, type WorkflowType,
 } from '@finbridge/shared';
 import { all, get, run, tx } from '../db/database';
 import { addHours, nowIso, today } from '../lib/clock';
@@ -20,7 +20,8 @@ export interface Subject {
   requesterId: number;
 }
 
-interface SnapshotStep {
+/** Step as frozen into the instance. Behaviour fields are missing in snapshots taken before they existed (→ defaults). */
+interface SnapshotStep extends Partial<StepBehaviour> {
   seq: number;
   name: string;
   approverType: ApproverType;
@@ -40,7 +41,20 @@ export interface InstanceRow {
 interface TaskRow {
   id: number; instance_id: number; seq: number; step_name: string; approver_type: ApproverType; status: string;
   activated_at: string | null; due_at: string | null; escalated_at: string | null; acted_by: number | null; acted_at: string | null; comment: string | null;
+  returned_from_task_id: number | null;
 }
+
+interface AssigneeRow {
+  task_id: number; user_id: number; reason: 'RESOLVED' | 'DELEGATE' | 'ESCALATION' | 'FALLBACK'; on_behalf_of_id: number | null;
+  decision: AssigneeDecision | null; decided_at: string | null; decided_by: number | null; comment: string | null;
+}
+
+/** Assignees whose approval is required in ALL mode (delegates act for them; escalation approvers can decide alone). */
+const isRequired = (a: Pick<AssigneeRow, 'reason'>) => a.reason === 'RESOLVED' || a.reason === 'FALLBACK';
+
+const EMPTY_SNAPSHOT: Snapshot = { definitionId: 0, revision: 0, skipSelfApproval: true, steps: [] };
+const snapshotOf = (inst: Pick<InstanceRow, 'definition_snapshot'>) => parseJson<Snapshot>(inst.definition_snapshot, EMPTY_SNAPSHOT);
+const behaviourOf = (snap: Snapshot, seq: number): StepBehaviour => stepBehaviour(snap.steps.find((s) => s.seq === seq));
 
 export interface EntitySummary { title: string; subtitle: string; amount: number | null; currency: string | null; link: string }
 
@@ -84,7 +98,10 @@ function applicableSteps(definitionId: number, ctx: RuleContext): SnapshotStep[]
   return all<StepRow>('SELECT * FROM workflow_steps WHERE definition_id = ? ORDER BY seq', definitionId)
     .map(stepDto)
     .filter((s) => evaluateCondition(s.condition, ctx))
-    .map((s) => ({ seq: s.seq, name: s.name, approverType: s.approverType, approverConfig: s.approverConfig, slaHours: s.slaHours, escalation: s.escalation }));
+    .map((s) => ({
+      seq: s.seq, name: s.name, approverType: s.approverType, approverConfig: s.approverConfig, slaHours: s.slaHours, escalation: s.escalation,
+      ...stepBehaviour(s),
+    }));
 }
 
 /* ------------------------------------------------------------------ approver resolution */
@@ -95,8 +112,23 @@ function activeUsers(companyId: number, ids: (number | null | undefined)[]): num
   return all<{ id: number }>(`SELECT id FROM users WHERE company_id = ? AND is_active = 1 AND id IN (${clean.map(() => '?').join(',')})`, companyId, ...clean).map((r) => r.id);
 }
 
+/** Users by built-in role (identity for the CEO / CFO / Finance approver types and fallbacks). */
 function usersWithRole(companyId: number, role: string): number[] {
   return all<{ id: number }>('SELECT id FROM users WHERE company_id = ? AND role = ? AND is_active = 1 ORDER BY id', companyId, role).map((r) => r.id);
+}
+
+let hasCompanyRoles: boolean | null = null;
+/** Users whose effective role code (company role, else built-in role) matches — used by the ROLE approver type. */
+function usersWithEffectiveRole(companyId: number, code: string): number[] {
+  if (hasCompanyRoles !== true) {
+    hasCompanyRoles = !!get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'company_roles'")
+      && all<{ name: string }>('PRAGMA table_info(users)').some((c) => c.name === 'role_id');
+    if (!hasCompanyRoles) { hasCompanyRoles = null; return usersWithRole(companyId, code); }
+  }
+  return all<{ id: number }>(
+    `SELECT u.id FROM users u LEFT JOIN company_roles r ON r.id = u.role_id
+      WHERE u.company_id = ? AND u.is_active = 1 AND COALESCE(r.code, u.role) = ? ORDER BY u.id`, companyId, code,
+  ).map((r) => r.id);
 }
 
 /** Resolves who must approve a step, dynamically, from the current organisation data. */
@@ -109,8 +141,8 @@ export function resolveApprovers(companyId: number, type: ApproverType, cfg: App
     : unitId && org.units.has(unitId) ? org.ccsInSubtree(unitId) : [];
 
   switch (type) {
-    case 'SPECIFIC_USER': return activeUsers(companyId, [cfg.userId]);
-    case 'ROLE': return cfg.role ? usersWithRole(companyId, cfg.role) : [];
+    case 'SPECIFIC_USER': return activeUsers(companyId, configUserIds(cfg));
+    case 'ROLE': return cfg.role ? usersWithEffectiveRole(companyId, cfg.role) : [];
     case 'CEO': return usersWithRole(companyId, 'CEO');
     case 'CFO': return usersWithRole(companyId, 'CFO');
     case 'FINANCE_MANAGER': return usersWithRole(companyId, 'FINANCE_MANAGER');
@@ -204,40 +236,51 @@ export function startWorkflow(p: StartParams): InstanceRow {
   });
 }
 
+/**
+ * Creates the pending task of a step (or a SKIPPED task when only the requester would approve it).
+ * `noSkip` is used when a stage is re-activated by a return: it must get a real approver.
+ */
+function createTask(inst: InstanceRow, step: SnapshotStep, snap: Snapshot, subject: Subject, org: OrgIndex, opts: { noSkip?: boolean; returnedFrom?: number } = {}): 'CREATED' | 'SKIPPED' {
+  const ts = nowIso();
+  const resolved = resolveApprovers(inst.company_id, step.approverType, step.approverConfig, subject, org);
+  let assignees = snap.skipSelfApproval ? resolved.filter((u) => u !== subject.requesterId) : resolved;
+  let reason: 'RESOLVED' | 'FALLBACK' = 'RESOLVED';
+  if (!assignees.length && resolved.length && !opts.noSkip) {
+    const taskId = run(
+      `INSERT INTO workflow_tasks (instance_id, seq, step_name, approver_type, status, activated_at, acted_at, comment)
+       VALUES (?, ?, ?, ?, 'SKIPPED', ?, ?, ?)`, inst.id, step.seq, step.name, step.approverType, ts, ts, 'Requester is the approver — self-approval skipped',
+    ).lastInsertRowid;
+    logAction(inst.id, taskId, null, 'AUTO_SKIP', 'PENDING', 'SKIPPED', 'Self-approval skipped');
+    return 'SKIPPED';
+  }
+  if (!assignees.length) {
+    // organisation data changed after submission: route to finance so the item never gets stuck
+    assignees = usersWithRole(inst.company_id, 'FINANCE_MANAGER').filter((u) => u !== subject.requesterId);
+    if (!assignees.length) assignees = usersWithRole(inst.company_id, 'ADMIN').filter((u) => u !== subject.requesterId);
+    reason = 'FALLBACK';
+  }
+  const taskId = run(
+    `INSERT INTO workflow_tasks (instance_id, seq, step_name, approver_type, status, activated_at, due_at, returned_from_task_id) VALUES (?, ?, ?, ?, 'PENDING', ?, ?, ?)`,
+    inst.id, step.seq, step.name, step.approverType, ts, step.slaHours ? addHours(ts, step.slaHours) : null, opts.returnedFrom ?? null,
+  ).lastInsertRowid;
+  for (const u of assignees) run('INSERT OR IGNORE INTO workflow_task_assignees (task_id, user_id, reason) VALUES (?, ?, ?)', taskId, u, reason);
+  for (const d of activeDelegations(inst.company_id, assignees, inst.workflow_type)) {
+    run("INSERT OR IGNORE INTO workflow_task_assignees (task_id, user_id, reason, on_behalf_of_id) VALUES (?, ?, 'DELEGATE', ?)", taskId, d.to, d.from);
+  }
+  run('UPDATE workflow_instances SET current_seq = ? WHERE id = ?', step.seq, inst.id);
+  const b = stepBehaviour(step);
+  logAction(inst.id, taskId, null, 'TASK_CREATED', null, 'PENDING', null, {
+    step: step.name, assignees, reason, approvalMode: b.approvalMode, ...(opts.returnedFrom ? { returnedFrom: opts.returnedFrom } : {}),
+  });
+  return 'CREATED';
+}
+
 function advance(inst: InstanceRow, afterSeq: number, actorId: number): void {
-  const snap = parseJson<Snapshot>(inst.definition_snapshot, { definitionId: 0, revision: 0, skipSelfApproval: true, steps: [] });
+  const snap = snapshotOf(inst);
   const subject = parseJson<Subject>(inst.subject, { orgUnitId: null, costCenterIds: [], requesterId: inst.started_by });
   const org = OrgIndex.load(inst.company_id);
   for (const step of snap.steps.filter((s) => s.seq > afterSeq).sort((a, b) => a.seq - b.seq)) {
-    const ts = nowIso();
-    const resolved = resolveApprovers(inst.company_id, step.approverType, step.approverConfig, subject, org);
-    let assignees = snap.skipSelfApproval ? resolved.filter((u) => u !== subject.requesterId) : resolved;
-    let reason: 'RESOLVED' | 'FALLBACK' = 'RESOLVED';
-    if (!assignees.length && resolved.length) {
-      const taskId = run(
-        `INSERT INTO workflow_tasks (instance_id, seq, step_name, approver_type, status, activated_at, acted_at, comment)
-         VALUES (?, ?, ?, ?, 'SKIPPED', ?, ?, ?)`, inst.id, step.seq, step.name, step.approverType, ts, ts, 'Requester is the approver — self-approval skipped',
-      ).lastInsertRowid;
-      logAction(inst.id, taskId, null, 'AUTO_SKIP', 'PENDING', 'SKIPPED', 'Self-approval skipped');
-      continue;
-    }
-    if (!assignees.length) {
-      // organisation data changed after submission: route to finance so the item never gets stuck
-      assignees = usersWithRole(inst.company_id, 'FINANCE_MANAGER').filter((u) => u !== subject.requesterId);
-      if (!assignees.length) assignees = usersWithRole(inst.company_id, 'ADMIN').filter((u) => u !== subject.requesterId);
-      reason = 'FALLBACK';
-    }
-    const taskId = run(
-      `INSERT INTO workflow_tasks (instance_id, seq, step_name, approver_type, status, activated_at, due_at) VALUES (?, ?, ?, ?, 'PENDING', ?, ?)`,
-      inst.id, step.seq, step.name, step.approverType, ts, step.slaHours ? addHours(ts, step.slaHours) : null,
-    ).lastInsertRowid;
-    for (const u of assignees) run('INSERT OR IGNORE INTO workflow_task_assignees (task_id, user_id, reason) VALUES (?, ?, ?)', taskId, u, reason);
-    for (const d of activeDelegations(inst.company_id, assignees, inst.workflow_type)) {
-      run("INSERT OR IGNORE INTO workflow_task_assignees (task_id, user_id, reason, on_behalf_of_id) VALUES (?, ?, 'DELEGATE', ?)", taskId, d.to, d.from);
-    }
-    run('UPDATE workflow_instances SET current_seq = ? WHERE id = ?', step.seq, inst.id);
-    logAction(inst.id, taskId, null, 'TASK_CREATED', null, 'PENDING', null, { step: step.name, assignees, reason });
-    return;
+    if (createTask(inst, step, snap, subject, org) === 'CREATED') return;
   }
   complete(inst, 'APPROVED', actorId, null);
 }
@@ -255,13 +298,40 @@ function complete(inst: InstanceRow, status: InstanceStatus, actorId: number, co
   else if (status === 'CANCELLED') h.onCancelled(fresh, actorId);
 }
 
-/** Whether `userId` may act on the task: an assignee, or an active delegate of an assignee. */
-function assigneeFor(task: TaskRow, inst: InstanceRow, userId: number): { onBehalfOf: number | null } | null {
-  const direct = get<{ on_behalf_of_id: number | null }>('SELECT on_behalf_of_id FROM workflow_task_assignees WHERE task_id = ? AND user_id = ?', task.id, userId);
-  if (direct) return { onBehalfOf: direct.on_behalf_of_id };
-  const assignees = all<{ user_id: number }>('SELECT user_id FROM workflow_task_assignees WHERE task_id = ?', task.id).map((r) => r.user_id);
-  const d = activeDelegations(inst.company_id, assignees, inst.workflow_type).find((x) => x.to === userId);
-  return d ? { onBehalfOf: d.from } : null;
+interface Standing {
+  /** Assignee rows the user decides on: their own (unless it is a delegate row) and those of the people they act for. */
+  rows: AssigneeRow[];
+  /** People the user acts for as a delegate. */
+  onBehalfOf: number[];
+}
+
+/**
+ * Whether `userId` may act on the task: an assignee, or an active delegate of an assignee
+ * (a delegate counts for the person they act for). Null when the user has no say on the task.
+ */
+function standingOn(task: Pick<TaskRow, 'id'>, inst: InstanceRow, userId: number, assignees?: AssigneeRow[]): Standing | null {
+  const rows = assignees ?? all<AssigneeRow>('SELECT * FROM workflow_task_assignees WHERE task_id = ?', task.id);
+  const own = rows.find((r) => r.user_id === userId);
+  const principals = new Set<number>();
+  if (own?.on_behalf_of_id) principals.add(own.on_behalf_of_id);
+  for (const r of rows) if (r.reason === 'DELEGATE' && r.user_id === userId && r.on_behalf_of_id) principals.add(r.on_behalf_of_id);
+  const delegable = rows.filter((r) => r.reason !== 'DELEGATE').map((r) => r.user_id);
+  for (const d of activeDelegations(inst.company_id, delegable, inst.workflow_type)) if (d.to === userId) principals.add(d.from);
+  principals.delete(userId);
+  const decideOn = [
+    ...(own && own.reason !== 'DELEGATE' ? [own] : []),
+    ...rows.filter((r) => principals.has(r.user_id) && r.reason !== 'DELEGATE'),
+  ];
+  if (!own && !decideOn.length) return null;
+  return { rows: decideOn, onBehalfOf: [...principals].filter((p) => rows.some((r) => r.user_id === p)) };
+}
+
+/** Rows the user can still decide on (ALL mode: undecided ones). */
+const openRows = (st: Standing) => st.rows.filter((r) => !r.decision);
+
+/** The latest approved task of an earlier stage — the target of a "return to previous step". */
+function previousApprovedTask(instanceId: number, beforeSeq: number): TaskRow | null {
+  return get<TaskRow>("SELECT * FROM workflow_tasks WHERE instance_id = ? AND seq < ? AND status = 'APPROVED' ORDER BY seq DESC, id DESC LIMIT 1", instanceId, beforeSeq) ?? null;
 }
 
 export function actOnTask(user: UserRow, taskId: number, action: TaskAction, rawComment?: string | null): InstanceRow {
@@ -272,13 +342,60 @@ export function actOnTask(user: UserRow, taskId: number, action: TaskAction, raw
     const inst = loadInstance(task.instance_id);
     if (inst.company_id !== user.company_id) throw notFound('Task');
     if (task.status !== 'PENDING' || inst.status !== 'IN_REVIEW') throw new HttpError(409, 'INVALID_TRANSITION', 'This approval step is no longer pending');
-    const who = assigneeFor(task, inst, user.id);
-    if (!who) throw new HttpError(403, 'NOT_ASSIGNEE', 'You are not an approver for this step');
-    if ((action === 'REJECT' || action === 'RETURN') && !comment) throw badRequest('COMMENT_REQUIRED', 'A comment is required');
-    if (who.onBehalfOf) run("INSERT OR IGNORE INTO workflow_task_assignees (task_id, user_id, reason, on_behalf_of_id) VALUES (?, ?, 'DELEGATE', ?)", task.id, user.id, who.onBehalfOf);
-    const status = action === 'APPROVE' ? 'APPROVED' : action === 'REJECT' ? 'REJECTED' : 'RETURNED';
-    run('UPDATE workflow_tasks SET status = ?, acted_by = ?, acted_at = ?, comment = ? WHERE id = ?', status, user.id, nowIso(), comment, task.id);
-    logAction(inst.id, task.id, user.id, action, 'PENDING', status, comment, who.onBehalfOf ? { onBehalfOf: who.onBehalfOf } : undefined);
+    const assignees = all<AssigneeRow>('SELECT * FROM workflow_task_assignees WHERE task_id = ?', task.id);
+    const st = standingOn(task, inst, user.id, assignees);
+    if (!st) throw new HttpError(403, 'NOT_ASSIGNEE', 'You are not an approver for this step');
+    const snap = snapshotOf(inst);
+    const b = behaviourOf(snap, task.seq);
+    if (action === 'REJECT' && !b.allowReject) throw badRequest('INVALID_TRANSITION', 'Rejecting is not allowed at this stage');
+    if (action === 'RETURN' && !b.allowReturn) throw badRequest('INVALID_TRANSITION', 'Returning is not allowed at this stage');
+    if ((action === 'REJECT' || action === 'RETURN' || (action === 'APPROVE' && b.requireCommentOnApprove)) && !comment) {
+      throw badRequest('COMMENT_REQUIRED', 'A comment is required');
+    }
+    const open = openRows(st);
+    const ownRow = assignees.find((r) => r.user_id === user.id);
+    // escalation approvers (and plain delegates without a principal row) decide for the whole stage
+    const decidesAlone = ownRow?.reason === 'ESCALATION' || !st.rows.length;
+    if (b.approvalMode === 'ALL' && !open.length && !decidesAlone) throw new HttpError(409, 'INVALID_TRANSITION', 'You have already decided on this step');
+    for (const p of st.onBehalfOf) {
+      run("INSERT OR IGNORE INTO workflow_task_assignees (task_id, user_id, reason, on_behalf_of_id) VALUES (?, ?, 'DELEGATE', ?)", task.id, user.id, p);
+    }
+    const ts = nowIso();
+    const decision: AssigneeDecision = action === 'APPROVE' ? 'APPROVED' : action === 'REJECT' ? 'REJECTED' : 'RETURNED';
+    const decided = (open.length ? open : st.rows).map((r) => r.user_id);
+    if (!decided.length && ownRow) decided.push(user.id);
+    for (const u of decided) {
+      run('UPDATE workflow_task_assignees SET decision = ?, decided_at = ?, decided_by = ?, comment = ? WHERE task_id = ? AND user_id = ?', decision, ts, user.id, comment, task.id, u);
+    }
+    const logData: Record<string, unknown> = {};
+    if (st.onBehalfOf.length) logData.onBehalfOf = st.onBehalfOf.length === 1 ? st.onBehalfOf[0] : st.onBehalfOf;
+
+    if (action === 'APPROVE' && b.approvalMode === 'ALL' && !decidesAlone) {
+      const required = all<AssigneeRow>('SELECT * FROM workflow_task_assignees WHERE task_id = ?', task.id).filter(isRequired);
+      const done = required.filter((r) => r.decision === 'APPROVED').length;
+      if (done < required.length) {
+        logAction(inst.id, task.id, user.id, 'APPROVE', 'PENDING', 'PENDING', comment, { ...logData, partial: true, approvals: done, required: required.length });
+        return loadInstance(inst.id);
+      }
+      logData.approvals = done; logData.required = required.length;
+    }
+
+    const status = decision;
+    run('UPDATE workflow_tasks SET status = ?, acted_by = ?, acted_at = ?, comment = ? WHERE id = ?', status, user.id, ts, comment, task.id);
+    if (action === 'RETURN' && b.returnTo === 'PREVIOUS_STEP') {
+      const prev = previousApprovedTask(inst.id, task.seq);
+      const prevStep = prev ? snap.steps.find((s) => s.seq === prev.seq) : undefined;
+      if (prev && prevStep) {
+        logAction(inst.id, task.id, user.id, 'RETURN', 'PENDING', 'RETURNED', comment, { ...logData, returnTo: 'PREVIOUS_STEP', toStep: prevStep.name, toSeq: prevStep.seq });
+        const subject = parseJson<Subject>(inst.subject, { orgUnitId: null, costCenterIds: [], requesterId: inst.started_by });
+        // later stages are approved again after the previous stage re-approves
+        createTask(inst, prevStep, snap, subject, OrgIndex.load(inst.company_id), { noSkip: true, returnedFrom: task.id });
+        return loadInstance(inst.id);
+      }
+      logData.returnTo = 'REQUESTER';
+      logData.noPreviousStep = true;
+    }
+    logAction(inst.id, task.id, user.id, action, 'PENDING', status, comment, Object.keys(logData).length ? logData : undefined);
     if (action === 'APPROVE') advance(inst, task.seq, user.id);
     else complete(inst, action === 'REJECT' ? 'REJECTED' : 'RETURNED', user.id, comment);
     return loadInstance(inst.id);
@@ -335,32 +452,60 @@ export function isParticipant(userId: number, instanceId: number): boolean {
 export function instanceDto(user: UserRow, instanceId: number): WorkflowInstanceDto {
   const inst = loadInstance(instanceId);
   if (inst.company_id !== user.company_id) throw notFound('Workflow instance');
-  const tasks = all<TaskRow>('SELECT * FROM workflow_tasks WHERE instance_id = ? ORDER BY seq, id', inst.id);
-  const assignees = all<{ task_id: number; user_id: number; reason: string }>(
-    `SELECT a.* FROM workflow_task_assignees a JOIN workflow_tasks t ON t.id = a.task_id WHERE t.instance_id = ?`, inst.id,
+  const snap = snapshotOf(inst);
+  // chronological: a return to a previous stage re-activates it as a new task after the returning one
+  const tasks = all<TaskRow>('SELECT * FROM workflow_tasks WHERE instance_id = ? ORDER BY id', inst.id);
+  const assignees = all<AssigneeRow>(
+    `SELECT a.* FROM workflow_task_assignees a JOIN workflow_tasks t ON t.id = a.task_id WHERE t.instance_id = ? ORDER BY a.rowid`, inst.id,
   );
   const actions = all<{ id: number; user_id: number | null; action: string; from_status: string | null; to_status: string | null; comment: string | null; created_at: string }>(
     'SELECT * FROM workflow_actions WHERE instance_id = ? ORDER BY id', inst.id,
   );
-  const nm = names([...new Set([inst.started_by, ...assignees.map((a) => a.user_id), ...tasks.map((t) => t.acted_by), ...actions.map((a) => a.user_id)].filter((x): x is number => !!x))]);
+  const nm = names([...new Set([
+    inst.started_by, ...assignees.flatMap((a) => [a.user_id, a.on_behalf_of_id, a.decided_by]), ...tasks.map((t) => t.acted_by), ...actions.map((a) => a.user_id),
+  ].filter((x): x is number => !!x))]);
   const now = nowIso();
   const pending = tasks.find((t) => t.status === 'PENDING');
-  const mine = pending && inst.status === 'IN_REVIEW' ? assigneeFor(pending, inst, user.id) : null;
+  const pendingRows = pending ? assignees.filter((a) => a.task_id === pending.id) : [];
+  const mine = pending && inst.status === 'IN_REVIEW' ? standingOn(pending, inst, user.id, pendingRows) : null;
+  const pendingMode = pending ? behaviourOf(snap, pending.seq).approvalMode : 'ANY';
+  const mineOpen = mine ? openRows(mine) : [];
+  const decidesAlone = !!mine && (pendingRows.find((r) => r.user_id === user.id)?.reason === 'ESCALATION' || !mine.rows.length);
+  const canAct = !!mine && (pendingMode === 'ANY' || decidesAlone || mineOpen.length > 0);
+  const myDecision = mine && !canAct ? mine.rows.find((r) => r.decision)?.decision ?? null : null;
+  const byId = new Map(tasks.map((t) => [t.id, t]));
   return {
     id: inst.id, workflowType: inst.workflow_type, definitionName: inst.definition_name, entityType: inst.entity_type, entityId: inst.entity_id,
     status: inst.status, currentSeq: inst.current_seq, startedBy: nm.get(inst.started_by) ?? '—', startedAt: inst.started_at, completedAt: inst.completed_at,
-    tasks: tasks.map((t) => ({
-      id: t.id, seq: t.seq, stepName: t.step_name, approverType: t.approver_type, status: t.status as WorkflowInstanceDto['tasks'][number]['status'],
-      assignees: assignees.filter((a) => a.task_id === t.id).map((a) => ({ userId: a.user_id, name: nm.get(a.user_id) ?? '—', reason: a.reason })),
-      activatedAt: t.activated_at, dueAt: t.due_at, isOverdue: t.status === 'PENDING' && !!t.due_at && t.due_at < now,
-      actedBy: t.acted_by ? nm.get(t.acted_by) ?? '—' : null, actedAt: t.acted_at, comment: t.comment,
-    })),
+    tasks: tasks.map((t): WorkflowTaskDto => {
+      const b = behaviourOf(snap, t.seq);
+      const rows = assignees.filter((a) => a.task_id === t.id);
+      const required = rows.filter(isRequired);
+      const from = t.returned_from_task_id ? byId.get(t.returned_from_task_id) : undefined;
+      return {
+        id: t.id, seq: t.seq, stepName: t.step_name, approverType: t.approver_type, status: t.status as WorkflowTaskDto['status'],
+        assignees: rows.map((a) => ({
+          userId: a.user_id, name: nm.get(a.user_id) ?? '—', reason: a.reason,
+          onBehalfOf: a.on_behalf_of_id ? nm.get(a.on_behalf_of_id) ?? '—' : null, required: isRequired(a),
+          decision: a.decision, decidedAt: a.decided_at, decidedBy: a.decided_by ? nm.get(a.decided_by) ?? '—' : null, decisionComment: a.comment,
+        })),
+        activatedAt: t.activated_at, dueAt: t.due_at, isOverdue: t.status === 'PENDING' && !!t.due_at && t.due_at < now,
+        actedBy: t.acted_by ? nm.get(t.acted_by) ?? '—' : null, actedAt: t.acted_at, comment: t.comment,
+        ...b,
+        approvalsRequired: b.approvalMode === 'ALL' ? Math.max(required.length, 1) : 1,
+        approvalsDone: b.approvalMode === 'ALL'
+          ? (t.status === 'APPROVED' ? Math.max(required.length, 1) : required.filter((a) => a.decision === 'APPROVED').length)
+          : t.status === 'APPROVED' ? 1 : 0,
+        returnedFrom: from ? { taskId: from.id, stepName: from.step_name, by: from.acted_by ? nm.get(from.acted_by) ?? '—' : null, comment: from.comment, at: from.acted_at } : null,
+      };
+    }),
     actions: actions.map((a) => ({
       id: a.id, action: a.action, userName: a.user_id ? nm.get(a.user_id) ?? '—' : 'FinBridge', fromStatus: a.from_status, toStatus: a.to_status,
       comment: a.comment, createdAt: a.created_at,
     })),
-    canAct: !!mine,
-    myTaskId: mine ? pending!.id : null,
+    canAct,
+    myTaskId: canAct ? pending!.id : null,
+    myDecision,
     canCancel: inst.status === 'IN_REVIEW' && inst.started_by === user.id,
   };
 }
@@ -398,7 +543,14 @@ export function inbox(user: UserRow): InboxItemDto[] {
      ORDER BY t.due_at IS NULL, t.due_at, t.activated_at`,
     user.company_id, user.id, user.id, day, day,
   );
-  return toInbox(rows);
+  // committee stages: hide tasks on which the user (or the person they act for) has already decided
+  return toInbox(rows.filter((r) => {
+    if (behaviourOf(snapshotOf(r), r.seq).approvalMode !== 'ALL') return true;
+    const st = standingOn({ id: r.task_id }, r, user.id);
+    if (!st) return false;
+    const own = get<{ reason: string }>('SELECT reason FROM workflow_task_assignees WHERE task_id = ? AND user_id = ?', r.task_id, user.id);
+    return own?.reason === 'ESCALATION' || !st.rows.length || openRows(st).length > 0;
+  }));
 }
 
 export function allPending(companyId: number): InboxItemDto[] {

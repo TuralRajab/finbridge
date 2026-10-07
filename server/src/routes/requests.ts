@@ -24,7 +24,7 @@ const inputSchema = z.object({
   currency: z.string().length(3).default('AZN'),
 });
 
-requestsRouter.get('/', (req, res) => {
+requestsRouter.get('/', requirePermission('requests.view'), (req, res) => {
   const q = z.object({ year: z.coerce.number().int().optional(), status: z.string().optional(), mine: z.enum(['1', 'true']).optional() }).parse(req.query);
   res.json(listPrs(currentUser(req), { year: q.year, status: q.status, mine: !!q.mine }));
 });

@@ -1,3 +1,4 @@
+import { userCan } from '../lib/permissions';
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
@@ -14,8 +15,8 @@ import {
   submitSection, submitVersion, toBudgetDto, updateLines, type BudgetRow,
 } from '../services/budgets';
 import { assertUploadedFile, importBudget } from '../services/excel';
+import { planningComparison, planningMonthly, type PlanningQuery } from '../services/planning';
 import { forbidden } from '../lib/errors';
-import { can } from '@finbridge/shared';
 
 export const budgetsRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.maxUploadBytes } });
@@ -123,7 +124,7 @@ budgetsRouter.get('/:id/compare', requirePermission('budget.view'), (req, res) =
 budgetsRouter.get('/:id/history', requirePermission('budget.view'), (req, res) => {
   const user = currentUser(req);
   const budget = loadBudget(companyIdOf(req), toId(req.params.id));
-  if (!can(user.role, 'audit.view') && !can(user.role, 'budget.manage')) { res.json([]); return; }
+  if (!userCan(user, 'audit.view') && !userCan(user, 'budget.manage')) { res.json([]); return; }
   const rows = all<{ id: number; user_name: string | null; entity_type: string; entity_id: number | null; action: string; changes: string | null; created_at: string }>(
     `SELECT a.*, u.full_name AS user_name FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
       WHERE a.company_id = ? AND ((a.entity_type = 'BUDGET' AND a.entity_id = ?)
@@ -149,4 +150,30 @@ budgetsRouter.post('/:id/import', requirePermission('excel.import', 'budget.mana
   const report = await importBudget(user, budget, buffer, { ...o, mapping: o.mapping ? parseJson(o.mapping, undefined) : undefined, fileName: req.file!.originalname });
   if (!report.dryRun && report.errors.length) throw badRequest('IMPORT_FAILED', 'The file has errors', report);
   res.json(report);
+});
+
+/* ------------------------------------------------------------------ planning comparison (prior years vs plan) */
+
+const planningSchema = z.object({
+  versionId: z.coerce.number().int().positive().optional(),
+  groupBy: z.enum(['section', 'costCenter', 'account', 'line']).default('section'),
+  unitId: z.coerce.number().int().positive().optional(),
+  costCenterId: z.coerce.number().int().positive().optional(),
+  accountId: z.coerce.number().int().positive().optional(),
+  years: z.coerce.number().int().min(1).max(3).default(2),
+  forecast: z.enum(['budget', 'run_rate']).default('budget'),
+});
+
+/** Prior years' original / final budget and actuals next to the plan of the selected version, grouped and drillable. */
+budgetsRouter.get('/:id/planning', requirePermission('budget.view'), (req, res) => {
+  const user = currentUser(req);
+  const q: PlanningQuery = planningSchema.parse(req.query);
+  res.json(planningComparison(user, loadBudget(companyIdOf(req), toId(req.params.id)), q));
+});
+
+/** 12-month series per prior year (budget, actual) and the plan, for the slice selected by the filters. */
+budgetsRouter.get('/:id/planning/monthly', requirePermission('budget.view'), (req, res) => {
+  const user = currentUser(req);
+  const q: PlanningQuery = planningSchema.parse(req.query);
+  res.json(planningMonthly(user, loadBudget(companyIdOf(req), toId(req.params.id)), q));
 });

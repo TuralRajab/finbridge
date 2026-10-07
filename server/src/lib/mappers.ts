@@ -1,6 +1,7 @@
 import type { CompanyDto, Lang, Role, UserDto } from '@finbridge/shared';
 import { get } from '../db/database';
 import { toLicenseDto, type CompanyRow } from './license';
+import { roleOfUser } from '../services/roles';
 
 export interface UserRow {
   id: number;
@@ -9,6 +10,7 @@ export interface UserRow {
   full_name: string;
   password_hash: string;
   role: Role;
+  role_id?: number | null;
   org_unit_id: number | null;
   manager_id: number | null;
   job_family_id: number | null;
@@ -28,6 +30,7 @@ export function toUserDto(u: UserRow, orgUnitName?: string | null): UserDto {
     email: u.email,
     fullName: u.full_name,
     role: u.role,
+    ...roleFields(u),
     orgUnitId: u.org_unit_id,
     orgUnitName: unitName,
     managerId: u.manager_id,
@@ -37,6 +40,11 @@ export function toUserDto(u: UserRow, orgUnitName?: string | null): UserDto {
     isActive: u.is_active === 1,
     lastLoginAt: u.last_login_at,
   };
+}
+
+function roleFields(u: UserRow): Pick<UserDto, 'roleId' | 'roleCode' | 'roleName'> {
+  const r = roleOfUser({ company_id: u.company_id, role: u.role, role_id: u.role_id ?? null });
+  return r ? { roleId: r.id, roleCode: r.code, roleName: r.name } : { roleId: null, roleCode: u.role, roleName: u.role };
 }
 
 export function toCompanyDto(c: CompanyRow): CompanyDto {

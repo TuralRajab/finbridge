@@ -11,7 +11,9 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { PlatformPage } from './pages/PlatformPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AccountsPage } from './pages/admin/AccountsPage';
+import { AdminCenterPage } from './pages/admin/AdminCenterPage';
 import { AuditPage } from './pages/admin/AuditPage';
+import { RolesPage } from './pages/admin/RolesPage';
 import { BulkImportPage } from './pages/admin/BulkImportPage';
 import { CompanyPage } from './pages/admin/CompanyPage';
 import { CostCentersPage } from './pages/admin/CostCentersPage';
@@ -44,9 +46,9 @@ function Protected({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function Need({ permission, children }: { permission: Permission; children: ReactNode }) {
+function Need({ permission, any, children }: { permission: Permission; any?: Permission[]; children: ReactNode }) {
   const { can, user } = useAuth();
-  if (!can(permission)) return <Navigate to={user?.role === 'SUPER_ADMIN' ? '/platform' : '/'} replace />;
+  if (!(any ?? [permission]).some((p) => can(p))) return <Navigate to={user?.role === 'SUPER_ADMIN' ? '/platform' : '/'} replace />;
   return <>{children}</>;
 }
 
@@ -55,7 +57,7 @@ function Home() {
   const { user, can } = useAuth();
   if (user?.role === 'SUPER_ADMIN') return <Navigate to="/platform" replace />;
   if (user?.company && !user.company.setupCompleted && can('templates.apply')) return <Navigate to="/setup" replace />;
-  if (!can('reports.view')) return <Navigate to="/requests" replace />;
+  if (!can('dashboard.view')) return <Navigate to={can('requests.view') ? '/requests' : '/approvals'} replace />;
   return <DashboardPage />;
 }
 
@@ -74,7 +76,7 @@ export function App() {
         <Route path="changes/:id/edit" element={<Need permission="change.create"><ChangeFormPage /></Need>} />
         <Route path="changes/:id" element={<Need permission="budget.view"><ChangeDetailPage /></Need>} />
 
-        <Route path="requests" element={<Need permission="request.create"><RequestsPage /></Need>} />
+        <Route path="requests" element={<Need permission="requests.view"><RequestsPage /></Need>} />
         <Route path="requests/new" element={<Need permission="request.create"><RequestFormPage /></Need>} />
         <Route path="requests/:id/edit" element={<Need permission="request.create"><RequestFormPage /></Need>} />
         <Route path="requests/:id" element={<Need permission="masterdata.view"><RequestDetailPage /></Need>} />
@@ -85,19 +87,21 @@ export function App() {
         <Route path="reports/changes" element={<Need permission="reports.view"><ChangeReportPage /></Need>} />
 
         <Route path="setup" element={<Need permission="templates.apply"><SetupWizardPage /></Need>} />
-        <Route path="admin/organization" element={<Need permission="masterdata.view"><OrgStructurePage /></Need>} />
-        <Route path="admin/cost-centers" element={<Need permission="masterdata.view"><CostCentersPage /></Need>} />
-        <Route path="admin/accounts" element={<Need permission="masterdata.view"><AccountsPage /></Need>} />
+        <Route path="admin/organization" element={<Need permission="org.view"><OrgStructurePage /></Need>} />
+        <Route path="admin/cost-centers" element={<Need permission="org.view"><CostCentersPage /></Need>} />
+        <Route path="admin/accounts" element={<Need permission="coa.view"><AccountsPage /></Need>} />
         <Route path="admin/import" element={<Need permission="excel.import"><BulkImportPage /></Need>} />
         <Route path="admin/templates" element={<Need permission="templates.apply"><TemplatesPage /></Need>} />
-        <Route path="admin/financial" element={<Need permission="coa.manage"><FinancialSettingsPage /></Need>} />
-        <Route path="admin/workflows" element={<Need permission="workflow.manage"><WorkflowListPage /></Need>} />
+        <Route path="admin/financial" element={<Need permission="coa.view" any={['coa.view', 'company.manage']}><FinancialSettingsPage /></Need>} />
+        <Route path="admin/workflows" element={<Need permission="workflow.view"><WorkflowListPage /></Need>} />
         <Route path="admin/workflows/new" element={<Need permission="workflow.manage"><WorkflowBuilderPage /></Need>} />
-        <Route path="admin/workflows/:id" element={<Need permission="workflow.manage"><WorkflowBuilderPage /></Need>} />
+        <Route path="admin/workflows/:id" element={<Need permission="workflow.view"><WorkflowBuilderPage /></Need>} />
         <Route path="delegations" element={<Need permission="masterdata.view"><DelegationsPage /></Need>} />
-        <Route path="admin/users" element={<Need permission="users.manage"><UsersPage /></Need>} />
+        <Route path="admin" element={<Need permission="users.view" any={['users.view', 'org.manage', 'coa.manage', 'workflow.manage', 'company.manage', 'audit.view']}><AdminCenterPage /></Need>} />
+        <Route path="admin/users" element={<Need permission="users.view"><UsersPage /></Need>} />
+        <Route path="admin/roles" element={<Need permission="users.view"><RolesPage /></Need>} />
         <Route path="admin/audit" element={<Need permission="audit.view"><AuditPage /></Need>} />
-        <Route path="admin/company" element={<Need permission="masterdata.view"><CompanyPage /></Need>} />
+        <Route path="admin/company" element={<Need permission="company.view"><CompanyPage /></Need>} />
         <Route path="platform" element={<Need permission="platform.manage"><PlatformPage /></Need>} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="*" element={<NotFoundPage />} />

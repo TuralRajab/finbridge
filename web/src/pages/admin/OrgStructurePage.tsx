@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { CrudPage } from '../../components/CrudPage';
 import { Alert, Badge, Button, Card, Empty, ErrorMessage, ExportButton, Field, Icon, Input, Modal, PageHeader, Select, Spinner, Tabs } from '../../components/ui';
 import { BulkImportButton } from '../../components/BulkImportDialog';
+import { OrgChart } from '../../components/OrgChart';
 import { fmt, useI18n, useLocal } from '../../i18n';
 import { useDisplayName, useMasterData } from '../../lib/masterdata';
 import { useAsync } from '../../lib/useAsync';
@@ -14,7 +15,7 @@ import '../../styles/admin-org.css';
 const az = {
   title: 'Təşkilati struktur',
   subtitle: 'Şirkətin iyerarxiyası, vahid növləri, peşə ailələri və vəzifələr. Struktur büdcə bölmələrini və təsdiq marşrutlarını müəyyən edir.',
-  tabTree: 'İyerarxiya', tabTypes: 'Vahid növləri', tabJobs: 'Peşə ailələri', tabPositions: 'Vəzifələr',
+  tabTree: 'İyerarxiya', tabChart: 'Ağac görünüşü', tabTypes: 'Vahid növləri', tabJobs: 'Peşə ailələri', tabPositions: 'Vəzifələr',
   unit: 'Struktur vahidi', type: 'Növ', head: 'Rəhbər', ccs: 'Xərc m.', children: 'Alt vahid', noHead: '— Təyin edilməyib —',
   showInactive: 'Deaktivləri göstər', expandAll: 'Hamısını aç', collapseAll: 'Hamısını bağla', addChild: 'Alt vahid əlavə et', addUnit: 'Yeni vahid',
   move: 'Köçür', setHead: 'Rəhbəri təyin et', root: 'Kök vahid', budgetSection: 'Büdcə bölməsi',
@@ -42,7 +43,7 @@ const TEXT = {
   en: {
     title: 'Organisation structure',
     subtitle: 'Company hierarchy, unit types, job families and positions. The structure defines budget sections and approval routing.',
-    tabTree: 'Hierarchy', tabTypes: 'Unit types', tabJobs: 'Job families', tabPositions: 'Positions',
+    tabTree: 'Hierarchy', tabChart: 'Org chart', tabTypes: 'Unit types', tabJobs: 'Job families', tabPositions: 'Positions',
     unit: 'Org unit', type: 'Type', head: 'Head', ccs: 'CCs', children: 'Sub-units', noHead: '— Not assigned —',
     showInactive: 'Show inactive', expandAll: 'Expand all', collapseAll: 'Collapse all', addChild: 'Add sub-unit', addUnit: 'New unit',
     move: 'Move', setHead: 'Set head', root: 'Root unit', budgetSection: 'Budget section',
@@ -65,7 +66,7 @@ const TEXT = {
   } satisfies typeof az,
 };
 
-type Tab = 'tree' | 'types' | 'jobs' | 'positions';
+type Tab = 'tree' | 'chart' | 'types' | 'jobs' | 'positions';
 const nbsp = (depth: number) => '   '.repeat(depth);
 
 export function OrgStructurePage() {
@@ -76,6 +77,7 @@ export function OrgStructurePage() {
   const md = useMasterData({ users: true });
   const types = useAsync(() => api<OrgUnitTypeDto[]>('GET', '/org/types'), []);
   const [dataVersion, setDataVersion] = useState(0);
+  const [listUnit, setListUnit] = useState<number | null>(null);
 
   return (
     <>
@@ -86,11 +88,13 @@ export function OrgStructurePage() {
       </>} />
       {!canManage && <p className="hint mb-8">{L.readOnly}</p>}
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[
-        { value: 'tree', label: L.tabTree }, { value: 'types', label: L.tabTypes }, { value: 'jobs', label: L.tabJobs }, { value: 'positions', label: L.tabPositions },
+        { value: 'tree', label: L.tabTree }, { value: 'chart', label: L.tabChart }, { value: 'types', label: L.tabTypes }, { value: 'jobs', label: L.tabJobs }, { value: 'positions', label: L.tabPositions },
       ]} />
       {(md.loading && !md.data) || (types.loading && !types.data) ? <Spinner /> : md.error || types.error ? <ErrorMessage error={md.error ?? types.error} /> : md.data && types.data && (
         <>
-          {tab === 'tree' && <Hierarchy units={md.data.units} costCenters={md.data.costCenters} users={md.data.users} types={types.data} canManage={canManage} reload={md.reload} />}
+          {tab === 'tree' && <Hierarchy key={listUnit ?? 0} initialSelectedId={listUnit} units={md.data.units} costCenters={md.data.costCenters} users={md.data.users} types={types.data} canManage={canManage} reload={md.reload} />}
+          {tab === 'chart' && <ChartView units={md.data.units} costCenters={md.data.costCenters} users={md.data.users} types={types.data} canManage={canManage} reload={md.reload}
+            onOpenInList={(id) => { setListUnit(id); setTab('tree'); }} />}
           {tab === 'types' && <UnitTypes types={types.data} canManage={canManage} reload={async () => { await types.reload(); await md.reload(); }} />}
           {tab === 'jobs' && <JobFamilies key={dataVersion} users={md.data.users} canManage={canManage} />}
           {tab === 'positions' && <Positions key={dataVersion} users={md.data.users} units={md.data.units} canManage={canManage} />}
@@ -108,8 +112,8 @@ type Dialog =
   | { kind: 'move'; unit: OrgUnitDto }
   | { kind: 'head'; unit: OrgUnitDto };
 
-function Hierarchy({ units, costCenters, users, types, canManage, reload }: {
-  units: OrgUnitDto[]; costCenters: CostCenterDto[]; users: UserDto[]; types: OrgUnitTypeDto[]; canManage: boolean; reload: () => Promise<void>;
+function Hierarchy({ units, costCenters, users, types, canManage, reload, initialSelectedId = null }: {
+  units: OrgUnitDto[]; costCenters: CostCenterDto[]; users: UserDto[]; types: OrgUnitTypeDto[]; canManage: boolean; reload: () => Promise<void>; initialSelectedId?: number | null;
 }) {
   const L = useLocal(TEXT);
   const { t } = useI18n();
@@ -117,7 +121,7 @@ function Hierarchy({ units, costCenters, users, types, canManage, reload }: {
   const [query, setQuery] = useState('');
   const [showInactive, setShowInactive] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(initialSelectedId);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [rowError, setRowError] = useState<unknown>(null);
 
@@ -235,6 +239,30 @@ function Hierarchy({ units, costCenters, users, types, canManage, reload }: {
         <HeadModal unit={dialog.unit} users={users} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await reload(); }} />
       )}
     </div>
+  );
+}
+
+/** Org chart tab: the visual tree plus the same create / edit / move / head dialogs as the hierarchy tab. */
+function ChartView({ units, costCenters, users, types, canManage, reload, onOpenInList }: {
+  units: OrgUnitDto[]; costCenters: CostCenterDto[]; users: UserDto[]; types: OrgUnitTypeDto[]; canManage: boolean; reload: () => Promise<void>; onOpenInList: (id: number) => void;
+}) {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
+  return (
+    <>
+      <OrgChart units={units} costCenters={costCenters} types={types} canManage={canManage} selectedId={selectedId} onSelect={setSelectedId}
+        onAction={setDialog} onOpenInList={onOpenInList} />
+      {dialog && (dialog.kind === 'create' || dialog.kind === 'edit') && (
+        <UnitModal dialog={dialog} units={units} types={types} users={users} onClose={() => setDialog(null)}
+          onSaved={async (id) => { setDialog(null); await reload(); if (id) setSelectedId(id); }} />
+      )}
+      {dialog?.kind === 'move' && (
+        <MoveModal unit={dialog.unit} units={units} types={types} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await reload(); }} />
+      )}
+      {dialog?.kind === 'head' && (
+        <HeadModal unit={dialog.unit} users={users} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await reload(); }} />
+      )}
+    </>
   );
 }
 

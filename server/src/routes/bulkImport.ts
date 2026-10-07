@@ -1,7 +1,8 @@
 import { Router, type Request } from 'express';
+import { userCan } from '../lib/permissions';
 import multer from 'multer';
 import { z } from 'zod';
-import { BULK_IMPORT_KINDS, can, type BulkImportKind, type BulkImportKindDto, type Lang } from '@finbridge/shared';
+import { BULK_IMPORT_KINDS, type BulkImportKind, type BulkImportKindDto, type Lang } from '@finbridge/shared';
 import { companyIdOf, currentUser } from '../auth/middleware';
 import { config } from '../config';
 import { forbidden } from '../lib/errors';
@@ -19,7 +20,7 @@ const kindParam = z.enum(BULK_IMPORT_KINDS);
 function entityFor(req: Request, importing: boolean) {
   const def = ENTITIES[kindParam.parse(String(req.params.kind).toUpperCase()) as BulkImportKind];
   const user = currentUser(req);
-  if (!can(user.role, def.permission) || (importing && !can(user.role, 'excel.import'))) throw forbidden();
+  if (!userCan(user, def.permission) || (importing && !userCan(user, 'excel.import'))) throw forbidden();
   return def;
 }
 
@@ -28,9 +29,9 @@ bulkImportRouter.get('/kinds', (req, res) => {
   const companyId = companyIdOf(req);
   const lang = langOf(req);
   const L = (az: string, en: string) => (lang === 'en' ? en : az);
-  res.json(BULK_IMPORT_KINDS.map((k) => ENTITIES[k]).filter((d) => can(user.role, d.permission)).map((d): BulkImportKindDto => ({
+  res.json(BULK_IMPORT_KINDS.map((k) => ENTITIES[k]).filter((d) => userCan(user, d.permission)).map((d): BulkImportKindDto => ({
     kind: d.kind, title: L(d.titleAz, d.titleEn), description: L(d.descriptionAz, d.descriptionEn), matchBy: L(d.matchByAz, d.matchByEn),
-    columns: columnDtos(d, companyId, lang), existing: d.count(companyId), canImport: can(user.role, 'excel.import'), needsPassword: !!d.needsPassword,
+    columns: columnDtos(d, companyId, lang), existing: d.count(companyId), canImport: userCan(user, 'excel.import'), needsPassword: !!d.needsPassword,
   })));
 });
 

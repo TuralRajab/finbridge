@@ -66,6 +66,8 @@ export type ApproverType = (typeof APPROVER_TYPES)[number];
 
 export interface ApproverConfig {
   userId?: number;
+  /** SPECIFIC_USER: several named users (e.g. a committee). `userId` keeps working for single-user steps. */
+  userIds?: number[];
   role?: string;
   unitTypeCode?: string;
   jobFamilyId?: number;
@@ -74,6 +76,53 @@ export interface ApproverConfig {
   positionId?: number;
   positionCode?: string;
 }
+
+/* ------------------------------------------------------------------ stage behaviour */
+
+/** ANY: one assignee's approval completes the stage. ALL: every resolved assignee must approve (committee). */
+export const APPROVAL_MODES = ['ANY', 'ALL'] as const;
+export type ApprovalMode = (typeof APPROVAL_MODES)[number];
+
+/** Where a "return for correction" goes: back to the requester, or to the previous (approved) stage. */
+export const RETURN_TARGETS = ['REQUESTER', 'PREVIOUS_STEP'] as const;
+export type ReturnTarget = (typeof RETURN_TARGETS)[number];
+
+/** What an approval stage allows and requires. Part of the instance snapshot, so running workflows keep their rules. */
+export interface StepBehaviour {
+  approvalMode: ApprovalMode;
+  allowReject: boolean;
+  allowReturn: boolean;
+  returnTo: ReturnTarget;
+  requireCommentOnApprove: boolean;
+  /** Free text shown to the approver, e.g. "Check against the procurement policy". */
+  instructions: string | null;
+}
+
+export const DEFAULT_STEP_BEHAVIOUR: Readonly<StepBehaviour> = {
+  approvalMode: 'ANY', allowReject: true, allowReturn: true, returnTo: 'REQUESTER', requireCommentOnApprove: false, instructions: null,
+};
+
+/** Fills missing settings with the defaults (old definitions / snapshots have none). */
+export function stepBehaviour(p?: Partial<StepBehaviour> | null): StepBehaviour {
+  const d = DEFAULT_STEP_BEHAVIOUR;
+  return {
+    approvalMode: p?.approvalMode === 'ALL' ? 'ALL' : d.approvalMode,
+    allowReject: typeof p?.allowReject === 'boolean' ? p.allowReject : d.allowReject,
+    allowReturn: typeof p?.allowReturn === 'boolean' ? p.allowReturn : d.allowReturn,
+    returnTo: p?.returnTo === 'PREVIOUS_STEP' ? 'PREVIOUS_STEP' : d.returnTo,
+    requireCommentOnApprove: typeof p?.requireCommentOnApprove === 'boolean' ? p.requireCommentOnApprove : d.requireCommentOnApprove,
+    instructions: p?.instructions?.trim() ? p.instructions.trim() : null,
+  };
+}
+
+/** Users named on a SPECIFIC_USER config (userIds plus the legacy userId). */
+export function configUserIds(cfg: ApproverConfig): number[] {
+  return [...new Set([...(cfg.userIds ?? []), ...(cfg.userId ? [cfg.userId] : [])])];
+}
+
+/** Individual decision of an assignee (ALL mode tracks one per person; a delegate decides for the person they act for). */
+export const ASSIGNEE_DECISIONS = ['APPROVED', 'REJECTED', 'RETURNED'] as const;
+export type AssigneeDecision = (typeof ASSIGNEE_DECISIONS)[number];
 
 export const INSTANCE_STATUSES = ['IN_REVIEW', 'APPROVED', 'REJECTED', 'RETURNED', 'CANCELLED', 'EXPIRED'] as const;
 export type InstanceStatus = (typeof INSTANCE_STATUSES)[number];

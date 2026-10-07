@@ -105,8 +105,100 @@ function monthsFor(p: Plan): number[] {
   });
 }
 
+/* ===================================================================== history (prior fiscal years) */
+
+type Months = number[];
+/** Clock for a step planned at `iso`, never earlier than the current clock (keeps timestamps monotonic). */
+function stepClock(iso: string): void {
+  setClock(iso > nowIso() ? iso : new Date(new Date(nowIso()).getTime() + 2 * 3600_000).toISOString());
+}
+/** Month m+1 day 4 (the close of month m); December closes on 6 January. */
+const closeOf = (year: number, m: number) => (m === 12 ? at(year + 1, 1, 6, 11) : at(year, m + 1, 4, 11));
+
+/**
+ * A complete budget cycle through the real services: create → lines → every section with lines submitted and
+ * approved through the workflow engine → version submitted, approved → locked. `start` is the planning start date.
+ */
+function budgetCycle(companyId: number, year: number, fin: number, start: [number, number, number],
+  lines: { cc: number; acc: number; months: Months; description?: string }[], submitterFor: (unitCode: string) => number) {
+  stepClock(at(start[0], start[1], start[2], 9));
+  let budget = createBudget(user(fin), { fiscalYear: year, name: `Büdcə ${year}`, upliftPct: 0 });
+  for (const l of lines) addLine(user(fin), budget, { costCenterId: l.cc, accountId: l.acc, description: l.description ?? '', months: l.months });
+  const sectionIds = [...new Set(listLines(user(fin), budget, null).map((l) => l.sectionUnitId))];
+  const sections = sectionIds.map((id) => get<{ id: number; code: string }>('SELECT id, code FROM org_units WHERE id = ?', id)!).sort((a, b) => a.code.localeCompare(b.code));
+  for (const s of sections) {
+    stepClock(at(start[0], start[1], start[2] + 2, 9));
+    submitSection(user(submitterFor(s.code)), budget, s.id);
+    approveAll(sectionInstance(budget.id, s.id), 26);
+  }
+  budget = loadBudget(companyId, budget.id);
+  stepClock(at(start[0], start[1] + 1 > 12 ? 12 : start[1] + 1, 6, 9));
+  submitVersion(user(fin), budget);
+  approveAll(get<{ workflow_instance_id: number }>('SELECT workflow_instance_id FROM budget_versions WHERE id = ?', budget.current_version_id!)!.workflow_instance_id, 40);
+  budget = loadBudget(companyId, budget.id);
+  if (get<{ status: string }>('SELECT status FROM budget_versions WHERE id = ?', budget.current_version_id!)!.status === 'APPROVED') {
+    stepClock(at(start[0], 12, 20, 15));
+    lockVersion(fin, budget);
+  }
+  return loadBudget(companyId, budget.id);
+}
+
+/** Uploads actuals for the given months as monthly Excel closes. */
+function uploadActuals(companyId: number, year: number, months: number[], fin: number, cells: { cc: number; acc: number; months: Months }[]): void {
+  for (const m of months) {
+    stepClock(closeOf(year, m));
+    for (const c of cells) if (c.months[m - 1]) upsertActualCell(companyId, year, m, c.cc, c.acc, c.months[m - 1], 'EXCEL', fin);
+  }
+}
+
+/** Approved budget change request (increase of one month) on a locked prior-year budget. */
+function historyChange(budgetId: number, companyId: number, who: number, when: string, cc: number, acc: number, month: number, increase: number, title: string, reason: string): void {
+  stepClock(when);
+  const current = listLines(user(who), loadBudget(companyId, budgetId), null).filter((l) => l.costCenterId === cc && l.accountId === acc).reduce((s, l) => s + l.months[month - 1], 0);
+  const cr = createCr(user(who), { budgetId, costCenterId: cc, title, reason, items: [{ accountId: acc, month, requestedAmount: current + increase }] });
+  approveAll(submitCr(user(who), cr).workflow_instance_id!, 22);
+}
+
+const round50 = (v: number) => Math.round(v / 50) * 50;
+
+/**
+ * Xəzər history: how each department's plan and spend developed. `growth` scales this year's plan back to the
+ * prior year's plan (department expansion), `drift` is the actual-vs-plan tendency of that year.
+ */
+const XEZER_HISTORY: Record<'y2' | 'y1', { growth: Record<string, number>; drift: Record<string, number> }> = {
+  y2: {
+    growth: { EXE: 0.92, FIN: 0.94, SAL: 0.82, MKT: 0.88, LOG: 0.86, WH: 0.95, HR: 0.84, IT: 1.06 },
+    drift: { EXE: 1.0, FIN: 0.97, SAL: 1.06, MKT: 0.93, LOG: 1.09, WH: 0.96, HR: 1.01, IT: 0.88 },
+  },
+  y1: {
+    growth: { EXE: 0.96, FIN: 0.97, SAL: 0.91, MKT: 0.95, LOG: 0.94, WH: 0.98, HR: 0.93, IT: 1.03 },
+    drift: { EXE: 0.99, FIN: 1.0, SAL: 1.08, MKT: 1.04, LOG: 1.03, WH: 1.02, HR: 1.05, IT: 0.94 },
+  },
+};
+
+function xezerHistoryLines(companyId: number, which: 'y2' | 'y1', year: number) {
+  const h = XEZER_HISTORY[which];
+  const random = rng(year * 7 + 3);
+  return XEZER_PLAN
+    // the Gəncə branch (SAL-03) opened in Y-1; HR-03 (people development) was set up in Y-1 as well
+    .filter((p) => which === 'y1' || !['SAL-03', 'HR-03'].includes(p[0]))
+    .map((p) => {
+      const dept = p[0].split('-')[0];
+      const plan = monthsFor(p).map((v) => round50(v * (h.growth[dept] ?? 1)));
+      const actual = plan.map((v, i) => {
+        if (!v) return 0;
+        // CAPEX: Y-2 IT hardware refresh in August was postponed; vehicles came in slightly above budget
+        if (p[1] === '113-03' && which === 'y2' && i === 7) return 0;
+        if (p[1].startsWith('113')) return Math.round(v * (1.02 + random() * 0.06));
+        const season = p[0].startsWith('MKT') ? 0.92 + random() * 0.2 : 0.95 + random() * 0.1;
+        return Math.round(v * (h.drift[dept] ?? 1) * season);
+      });
+      return { cc: ccId(companyId, p[0]), acc: accId(companyId, p[1]), plan, actual };
+    });
+}
+
 function seedXezer(Y: number, M: number): void {
-  setClock(at(Y - 1, 11, 3, 8));
+  setClock(at(Y - 3, 10, 1, 8));
   const companyId = createCompany({
     name: 'Xəzər Distribusiya MMC', taxId: '1403456781', baseCurrency: 'AZN', defaultLanguage: 'az', plan: 'BUSINESS', maxUsers: 25,
     validUntil: `${Y + 1}-12-31`, admin: { fullName: 'Rəşad Məmmədov', email: 'admin@demo.az', password: DEMO_PASSWORD },
@@ -153,6 +245,26 @@ function seedXezer(Y: number, M: number): void {
   const C = (c: string) => ccId(companyId, c);
   const A = (c: string) => accId(companyId, c);
 
+  // ---------------------------------------------------------------- history: Y-2 and Y-1 budgets, approved, locked, 12 months of actuals
+  const historySubmitters: Record<string, number> = { ROOT: fin, FIN: fin, SAL: sales, MKT: mkt, LOG: ops, WH: ops, HR: hr, IT: it };
+  const submitterFor = (code: string) => historySubmitters[code] ?? fin;
+  const h2 = xezerHistoryLines(companyId, 'y2', Y - 2);
+  const b2 = budgetCycle(companyId, Y - 2, fin, [Y - 3, 11, 10], h2.map((l) => ({ cc: l.cc, acc: l.acc, months: l.plan })), submitterFor);
+  const act2 = h2.map((l) => ({ cc: l.cc, acc: l.acc, months: l.actual }));
+  uploadActuals(companyId, Y - 2, [1, 2, 3, 4, 5, 6], fin, act2);
+  historyChange(b2.id, companyId, ops, at(Y - 2, 7, 8, 10), C('LOG-01'), A('711-06'), 8, 9000, 'Yanacaq qiymətinin artımı',
+    'Avqust ayından dizel yanacağının qiyməti artıb; marşrutlar üzrə əlavə xərc tələb olunur.');
+  uploadActuals(companyId, Y - 2, [7, 8, 9, 10], fin, act2);
+
+  const h1 = xezerHistoryLines(companyId, 'y1', Y - 1);
+  const b1 = budgetCycle(companyId, Y - 1, fin, [Y - 2, 11, 10], h1.map((l) => ({ cc: l.cc, acc: l.acc, months: l.plan })), submitterFor);
+  uploadActuals(companyId, Y - 2, [11, 12], fin, act2);
+  const act1 = h1.map((l) => ({ cc: l.cc, acc: l.acc, months: l.actual }));
+  uploadActuals(companyId, Y - 1, [1, 2, 3, 4, 5, 6, 7, 8, 9], fin, act1);
+  historyChange(b1.id, companyId, mkt, at(Y - 1, 10, 6, 10), C('MKT-01'), A('711-03'), 11, 12000, 'Yeni il kampaniyası',
+    'Noyabr–dekabr satış mövsümü üçün əlavə reklam kampaniyası.');
+  uploadActuals(companyId, Y - 1, [10], fin, act1);
+
   // ---------------------------------------------------------------- current-year budget: plan → sections → approval → lock
   setClock(at(Y - 1, 11, 10, 9));
   let budget = createBudget(user(fin), { fiscalYear: Y, name: `Büdcə ${Y}`, upliftPct: 0 });
@@ -170,6 +282,7 @@ function seedXezer(Y: number, M: number): void {
   approveAll(get<{ workflow_instance_id: number }>('SELECT workflow_instance_id FROM budget_versions WHERE id = ?', budget.current_version_id!)!.workflow_instance_id, 40);
   setClock(at(Y - 1, 12, 20, 15));
   lockVersion(fin, loadBudget(companyId, budget.id));
+  uploadActuals(companyId, Y - 1, [11, 12], fin, act1);
 
   // ---------------------------------------------------------------- actuals (Excel uploads), months 1..M-1
   const random = rng(Y);
@@ -241,8 +354,8 @@ function seedXezer(Y: number, M: number): void {
 
 /* ===================================================================== company 2 */
 
-function seedQafqaz(Y: number): void {
-  setClock(at(Y - 1, 12, 1, 9));
+function seedQafqaz(Y: number, M: number): void {
+  setClock(at(Y - 2, 10, 15, 9));
   const companyId = createCompany({
     name: 'Qafqaz Qida İstehsalat ASC', taxId: '1701234567', baseCurrency: 'AZN', defaultLanguage: 'az', plan: 'BUSINESS', maxUsers: 20,
     validUntil: `${Y + 1}-06-30`, admin: { fullName: 'Tamerlan Vəliyev', email: 'admin@qafqazqida.az', password: DEMO_PASSWORD },
@@ -259,6 +372,7 @@ function seedQafqaz(Y: number): void {
   }
   run("UPDATE cost_centers SET owner_user_id = ? WHERE company_id = ? AND code IN ('PRD-01', 'PRD-02', 'PRD-09', 'MNT-01', 'QC-01')", prod, companyId);
   run("UPDATE cost_centers SET owner_user_id = ? WHERE company_id = ? AND owner_user_id IS NULL", cfo, companyId);
+  run('UPDATE job_families SET owner_user_id = ? WHERE company_id = ? AND owner_user_id IS NULL', cfo, companyId);
   const plan: Plan[] = [
     ['PRD-01', '701-01', 210000], ['PRD-01', '701-02', 38000], ['PRD-01', '701-03', 46000], ['PRD-01', '701-04', 21000],
     ['PRD-02', '701-01', 160000], ['PRD-02', '701-02', 29000], ['PRD-02', '701-03', 38000], ['PRD-02', '701-04', 17000],
@@ -266,6 +380,27 @@ function seedQafqaz(Y: number): void {
     ['WH-01', '711-04', 12000], ['SAL-01', '711-01', 18000], ['SAL-02', '711-03', 15000], ['MKT-01', '711-02', 11000],
     ['HR-01', '721-01', 9000], ['IT-01', '721-07', 4500], ['FIN-01', '721-01', 14000], ['FIN-01', '721-09', 3000],
   ];
+  // history: Y-1 complete and Y in progress (approved, locked, actuals through the last closed month)
+  const random = rng(Y + 17);
+  const growth: Record<string, number> = { PRD: 0.9, MNT: 0.86, QC: 0.95, WH: 0.93, SAL: 0.9, MKT: 0.85, HR: 0.92, IT: 0.95, FIN: 0.94 };
+  const drift: Record<string, number> = { PRD: 1.05, MNT: 1.14, QC: 0.96, WH: 1.0, SAL: 0.97, MKT: 0.88, HR: 1.02, IT: 0.98, FIN: 0.99 };
+  const history = (k: number) => plan.map((p) => {
+    const dept = p[0].split('-')[0];
+    const g = k === 1 ? growth[dept] ?? 1 : ((growth[dept] ?? 1) + 1) / 2;
+    const months = monthsFor(p).map((v) => round50(v * g));
+    const actual = months.map((v) => (v ? Math.round(v * (p[1].startsWith('113') ? 1.04 : drift[dept] ?? 1) * (0.95 + random() * 0.1)) : 0));
+    return { cc: ccId(companyId, p[0]), acc: accId(companyId, p[1]), months, actual };
+  });
+  const submitterFor = (code: string) => (['PRD', 'PRO', 'MNT', 'QC'].includes(code) ? prod : fin);
+  const h1 = history(1);
+  budgetCycle(companyId, Y - 1, fin, [Y - 2, 11, 12], h1, submitterFor);
+  uploadActuals(companyId, Y - 1, Array.from({ length: 10 }, (_, i) => i + 1), fin, h1.map((l) => ({ ...l, months: l.actual })));
+  const h0 = history(0);
+  budgetCycle(companyId, Y, fin, [Y - 1, 11, 12], h0, submitterFor);
+  uploadActuals(companyId, Y - 1, [11, 12], fin, h1.map((l) => ({ ...l, months: l.actual })));
+  uploadActuals(companyId, Y, Array.from({ length: M - 1 }, (_, i) => i + 1), fin, h0.map((l) => ({ ...l, months: l.actual })));
+
+  stepClock(at(Y, M - 1 > 0 ? M - 1 : 1, 20, 9));
   const budget = createBudget(user(fin), { fiscalYear: Y + 1, name: `Büdcə ${Y + 1}`, upliftPct: 0 });
   for (const p of plan) addLine(user(fin), budget, { costCenterId: ccId(companyId, p[0]), accountId: accId(companyId, p[1]), description: '', months: monthsFor(p) });
 }
@@ -290,7 +425,7 @@ export function seedDemo(): void {
     run("INSERT INTO users (company_id, email, full_name, password_hash, role, created_at) VALUES (NULL, ?, 'FinBridge Operator', ?, 'SUPER_ADMIN', ?)",
       PLATFORM_ADMIN.email, hashPassword(PLATFORM_ADMIN.password), new Date().toISOString());
     seedXezer(Y, M);
-    seedQafqaz(Y);
+    seedQafqaz(Y, M);
     seedNew(Y);
   } finally {
     setClock(null);

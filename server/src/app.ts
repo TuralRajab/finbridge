@@ -17,6 +17,7 @@ import { budgetsRouter } from './routes/budgets';
 import { changesRouter } from './routes/changes';
 import { companyRouter } from './routes/company';
 import { bulkImportRouter } from './routes/bulkImport';
+import { rolesRouter } from './routes/roles';
 import { exportsRouter } from './routes/exports';
 import { accountsRouter, costCentersRouter } from './routes/masterdata';
 import { orgRouter } from './routes/org';
@@ -41,6 +42,7 @@ export function createApp(): express.Express {
   api.use('/platform', platformRouter);
   api.use('/company', companyRouter);
   api.use('/users', usersRouter);
+  api.use('/roles', rolesRouter);
   api.use('/org', orgRouter);
   api.use('/cost-centers', costCentersRouter);
   api.use('/accounts', accountsRouter);

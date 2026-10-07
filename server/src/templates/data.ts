@@ -116,7 +116,7 @@ export const DEFAULT_WORKFLOWS: TemplateWorkflow[] = [
     name: 'Büdcə dəyişikliyi sorğusu', type: 'BUDGET_CHANGE', priority: 100, conditions: null,
     steps: [
       { name: 'Xərc mərkəzinin sahibi', approverType: 'COST_CENTER_OWNER', slaHours: 48 },
-      { name: 'Maliyyə meneceri', approverType: 'FINANCE_MANAGER', slaHours: 48 },
+      { name: 'Maliyyə meneceri', approverType: 'FINANCE_MANAGER', slaHours: 48, behaviour: { instructions: 'Dəyişikliyin əsaslandırmasını və xərc mərkəzinin illik limitinə təsirini yoxlayın.' } },
       { name: 'CFO', approverType: 'CFO', slaHours: 72, condition: { all: [{ field: 'amount', op: 'gte', value: 10000 }] } },
       { name: 'CEO', approverType: 'CEO', slaHours: 72, condition: { all: [{ field: 'amount', op: 'gte', value: 100000 }] } },
     ],
@@ -136,8 +136,15 @@ export const DEFAULT_WORKFLOWS: TemplateWorkflow[] = [
     steps: [
       { name: 'Xərc mərkəzinin sahibi', approverType: 'COST_CENTER_OWNER', slaHours: 24 },
       { name: 'Divizion rəhbəri', approverType: 'EXECUTIVE', slaHours: 48 },
-      { name: 'Maliyyə meneceri', approverType: 'FINANCE_MANAGER', slaHours: 48 },
-      { name: 'CFO', approverType: 'CFO', slaHours: 72 },
+      {
+        name: 'Maliyyə yoxlaması', approverType: 'FINANCE_MANAGER', slaHours: 48,
+        // finance checks, it does not decide: it can only send the request back to the divisional head for corrections
+        behaviour: {
+          allowReject: false, returnTo: 'PREVIOUS_STEP',
+          instructions: 'İnvestisiya siyasətinə uyğunluğu, büdcədə nəzərdə tutulmasını, amortizasiya müddətini və ən azı üç kommersiya təklifinin olmasını yoxlayın.',
+        },
+      },
+      { name: 'CFO', approverType: 'CFO', slaHours: 72, behaviour: { instructions: 'İnvestisiyanın geri qayıtma müddətini və maliyyələşmə mənbəyini qiymətləndirin.' } },
       { name: 'CEO', approverType: 'CEO', slaHours: 72, condition: { all: [{ field: 'amount', op: 'gte', value: 100000 }] } },
     ],
   },

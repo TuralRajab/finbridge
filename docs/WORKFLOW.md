@@ -25,6 +25,25 @@ Təsdiq zəncirləri kodda deyil, şirkətin **axın qaydalarında** (workflow d
 
 Qərarlar: **Təsdiq** (şərh istəyə bağlı), **Rədd** və **Düzəlişə qaytarma** (şərh məcburi), sorğu edən üçün **Geri çəkmə**.
 
+#### Mərhələnin davranışı (hər mərhələ üçün ayrıca)
+
+Hər mərhələ konstruktorda «Mərhələnin davranışı» bölməsində konfiqurasiya olunur (`workflow_steps`, miqrasiya `004`).
+Parametrlər instansiyanın surətinə düşür — işləyən axınlar başladıqları qaydalarla davam edir. Köhnə qaydalar standart dəyərlərlə işləyir.
+
+| Parametr | Dəyərlər (standart **qalın**) | Məna |
+|----------|-------------------------------|------|
+| `approvalMode` | **`ANY`** / `ALL` | `ANY` — bir təsdiqləyənin təsdiqi kifayətdir. `ALL` (komitə) — hər təyin olunmuş təsdiqləyən təsdiqləməlidir; irəliləyiş «2 / 3» göstərilir. Qərarlar şəxs üzrə `workflow_task_assignees.decision/decided_at/decided_by/comment` sütunlarında saxlanır. Səlahiyyət ötürülmüş şəxsin qərarı əvəz etdiyi şəxsin adına yazılır. Bir üzvün **rəddi və ya qaytarması** mərhələni dərhal bitirir. Eskalasiya ilə əlavə olunan təsdiqləyən mərhələ üzrə tək qərar verə bilər. Artıq qərar vermiş üzv təkrar səs verə bilməz (`INVALID_TRANSITION`) və tapşırıq onun gələnlər qutusundan çıxır |
+| `allowReject` | **true** / false | false olduqda «Rədd et» düyməsi gizlənir, server `400 INVALID_TRANSITION` qaytarır (məs. «Maliyyə yoxlaması — yalnız qaytara bilər») |
+| `allowReturn` | **true** / false | false olduqda düzəlişə qaytarma qadağandır (`400 INVALID_TRANSITION`) |
+| `returnTo` | **`REQUESTER`** / `PREVIOUS_STEP` | Qaytarma göndərənə və ya **əvvəlki mərhələyə** gedir: son təsdiqlənmiş (ötürülməmiş) əvvəlki mərhələ yeni tapşırıq kimi yenidən açılır (`workflow_tasks.returned_from_task_id`), sənəd təsdiqdə qalır; həmin mərhələ yenidən təsdiqlədikdən sonra növbəti mərhələlər təkrar keçilir. Əvvəlki mərhələ yoxdursa — göndərənə |
+| `requireCommentOnApprove` | **false** / true | Təsdiq şərhsiz qəbul edilmir (`COMMENT_REQUIRED`) |
+| `instructions` | mətn | Təsdiqləyənə göstərilən təlimat, məs. «Satınalma siyasətinə uyğunluğu yoxlayın» |
+
+Digər qaydalar:
+- **Konkret istifadəçi** növü bir neçə istifadəçi qəbul edir (`approverConfig.userIds: number[]`; köhnə `userId` də işləyir) — `ALL` ilə birlikdə adlı komitə yaradılır.
+- **Rol** növü şirkətin öz rollarını da dəstəkləyir: aktiv istifadəçinin effektiv rol kodu `COALESCE(company_roles.code, users.role)` (`users.role_id` üzrə) seçilmiş koda bərabər olmalıdır. Qayda saxlanarkən kod ya daxili rol, ya da həmin şirkətin `company_roles` cədvəlindəki kod olmalıdır. CEO / CFO / Maliyyə meneceri növləri daxili rol üzrə həll olunur.
+- Konstruktorda hazır **mərhələ şablonları** (Departament rəhbərinin təsdiqi, Maliyyə yoxlaması, CFO təsdiqi ≥ 10 000, Komitə, Konkret istifadəçilər) və axının vizual sxemi (Göndərən → mərhələlər → Təsdiqləndi; şərtlər, rejim və qaytarma yolları ilə) var.
+
 ### Şablonlardan gələn standart axınlar
 
 | Qayda | Növ | Mərhələlər |
@@ -34,7 +53,7 @@ Qərarlar: **Təsdiq** (şərh istəyə bağlı), **Rədd** və **Düzəlişə q
 | İllik büdcənin təsdiqi | BUDGET_APPROVAL | CFO → CEO |
 | Büdcə dəyişikliyi | BUDGET_CHANGE | XM sahibi → Maliyyə → CFO (≥ 10 000) → CEO (≥ 100 000) |
 | Satınalma sorğusu (OPEX) | PURCHASE_REQUEST | XM sahibi → Maliyyə (≥ 10 000) → CFO (≥ 100 000) → CEO (≥ 500 000) |
-| CAPEX satınalma (`expenseClass = CAPEX`, prioritet 50) | PURCHASE_REQUEST | XM sahibi → Kurator direktor → Maliyyə → CFO → CEO (≥ 100 000) |
+| CAPEX satınalma (`expenseClass = CAPEX`, prioritet 50) | PURCHASE_REQUEST | XM sahibi → Kurator direktor → Maliyyə yoxlaması (rədd edə bilməz, əvvəlki mərhələyə qaytarır, təlimatla) → CFO → CEO (≥ 100 000) |
 | Xərc sorğusu | EXPENSE_REQUEST | Sorğu edənin rəhbəri → XM sahibi → Maliyyə (≥ 5 000) |
 
 ## Büdcə həyat dövrü

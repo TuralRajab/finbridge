@@ -3,7 +3,7 @@
  * (routes/org.ts, routes/masterdata.ts, routes/users.ts, routes/company.ts) so an Excel import can never
  * create data the screens could not.
  */
-import { COMPANY_ROLES, type BulkImportKind, type Lang } from '@finbridge/shared';
+import type { BulkImportKind, Lang } from '@finbridge/shared';
 import { all, get, run } from '../../db/database';
 import { hashPassword } from '../../auth/password';
 import { nowIso } from '../../lib/clock';
@@ -11,6 +11,7 @@ import { badRequest, conflict } from '../../lib/errors';
 import { assertSeatAvailable } from '../../lib/license';
 import { AccountIndex } from '../accounts';
 import { allowedParentsMap, OrgIndex } from '../org';
+import { roleByCode, roleOfUser, roleRows } from '../roles';
 import { bool, clearable, CLEAR, inDependencyOrder, setField, str, userIdByEmail, type Ctx, type EntityDef, type Row } from './engine';
 
 const YES = (v: number | boolean, lang?: Lang) => (v ? (lang === 'en' ? 'Yes' : 'Bəli') : (lang === 'en' ? 'No' : 'Xeyr'));
@@ -229,7 +230,7 @@ const USERS: EntityDef = {
   columns: [
     { key: 'email', az: 'E-poçt', en: 'E-mail', type: 'email', required: true, hintAz: 'Giriş üçün e-poçt (unikal). Mövcud e-poçt yazılarsa həmin istifadəçi yenilənir.', hintEn: 'Login e-mail (unique). An existing e-mail updates that user.', exampleAz: 'leyla.huseynova@company.az', width: 30 },
     { key: 'fullName', az: 'Ad, soyad', en: 'Full name', type: 'text', required: true, hintAz: 'Tam ad.', hintEn: 'Full name.', exampleAz: 'Leyla Hüseynova', width: 24 },
-    { key: 'role', az: 'Rol', en: 'Role', type: 'enum', required: 'create', options: () => [...COMPANY_ROLES], hintAz: 'Rolun kodu (Kodlar vərəqinə baxın).', hintEn: 'Role code (see Reference sheet).', exampleAz: 'FINANCE_MANAGER', width: 20 },
+    { key: 'role', az: 'Rol', en: 'Role', type: 'enum', required: 'create', options: (c) => roleRows(c).filter((r) => r.is_active === 1).map((r) => r.code), hintAz: 'Rolun kodu — standart və ya şirkətin yaratdığı rol (Kodlar vərəqinə baxın).', hintEn: 'Role code — built-in or a role created by the company (see Reference sheet).', exampleAz: 'FINANCE_MANAGER', width: 20 },
     { key: 'unitCode', az: 'Struktur vahidinin kodu', en: 'Org unit code', type: 'code', hintAz: 'İstifadəçinin işlədiyi vahid. Departament rəhbəri və əməkdaşın görünürlüyü buna görə müəyyən olunur.', hintEn: 'The unit the user belongs to. Drives what department heads and employees can see.', exampleAz: 'FIN', width: 18 },
     { key: 'managerEmail', az: 'Rəhbərin e-poçtu', en: 'Manager e-mail', type: 'email', hintAz: 'Birbaşa rəhbər ("Sorğu edənin rəhbəri" təsdiq mərhələsi). Bu faylda da ola bilər.', hintEn: 'Line manager (the "Requester\'s manager" approval step). May be in this file.', exampleAz: 'cfo@company.az', width: 26 },
     { key: 'jobFamilyCode', az: 'Peşə ailəsinin kodu', en: 'Job family code', type: 'code', hintAz: 'İstəyə bağlı.', hintEn: 'Optional.', exampleAz: 'FIN', width: 16 },
@@ -242,13 +243,13 @@ const USERS: EntityDef = {
     const email = emailOf(c);
     const units = new Map(all<{ id: number; code: string }>('SELECT id, code FROM org_units WHERE company_id = ?', c).map((u) => [u.id, u.code]));
     const jf = new Map(all<{ id: number; code: string }>('SELECT id, code FROM job_families WHERE company_id = ?', c).map((u) => [u.id, u.code]));
-    return all<UserRec>('SELECT * FROM users WHERE company_id = ? ORDER BY full_name', c).map((u) => ({
-      email: u.email, fullName: u.full_name, role: u.role, unitCode: u.org_unit_id ? units.get(u.org_unit_id) ?? null : null, managerEmail: email(u.manager_id),
+    return all<UserRec & { role_id: number | null }>('SELECT * FROM users WHERE company_id = ? ORDER BY full_name', c).map((u) => ({
+      email: u.email, fullName: u.full_name, role: roleOfUser({ company_id: c, role: u.role as never, role_id: u.role_id })?.code ?? u.role, unitCode: u.org_unit_id ? units.get(u.org_unit_id) ?? null : null, managerEmail: email(u.manager_id),
       jobFamilyCode: u.job_family_id ? jf.get(u.job_family_id) ?? null : null, jobTitle: u.job_title, language: u.language, active: YES(u.is_active),
     }));
   },
   reference: (c, lang) => [
-    { nameAz: 'Rollar', nameEn: 'Roles', headersAz: ['Kod', 'Ad'], headersEn: ['Code', 'Name'], rows: COMPANY_ROLES.map((r) => [r, ROLE_NAMES[r]?.[lang === 'en' ? 1 : 0] ?? r]) },
+    { nameAz: 'Rollar', nameEn: 'Roles', headersAz: ['Kod', 'Ad', 'Standart'], headersEn: ['Code', 'Name', 'Built-in'], rows: roleRows(c).filter((r) => r.is_active === 1).map((r) => [r.code, r.is_system ? ROLE_NAMES[r.code]?.[lang === 'en' ? 1 : 0] ?? r.name : (lang === 'en' ? r.name_en ?? r.name : r.name), YES(r.is_system, lang)]) },
     unitsRef(c),
     { nameAz: 'Peşə ailələri', nameEn: 'Job families', headersAz: ['Kod', 'Ad'], headersEn: ['Code', 'Name'], rows: all<{ code: string; name: string }>('SELECT code, name FROM job_families WHERE company_id = ? AND is_active = 1 ORDER BY code', c).map((j) => [j.code, j.name]) },
     usersRef(c),
@@ -270,19 +271,21 @@ const USERS: EntityDef = {
         const jfCode = str(r.v.jobFamilyCode);
         const jf = jfCode ? get<{ id: number }>('SELECT id FROM job_families WHERE company_id = ? AND code = ? COLLATE NOCASE', c, jfCode) : undefined;
         if (jfCode && !jf) throw badRequest('VALIDATION_ERROR', ctx.m(`Peşə ailəsi "${jfCode}" tapılmadı`, `Job family "${jfCode}" not found`));
-        const ex = get<UserRec & { company_id: number | null }>('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email);
+        const roleCode = str(r.v.role);
+        const role = roleCode ? roleByCode(c, roleCode) : undefined;
+        if (roleCode && (!role || role.is_active !== 1)) throw badRequest('VALIDATION_ERROR', ctx.m(`"${roleCode}" rolu tapılmadı və ya deaktivdir`, `Role "${roleCode}" not found or inactive`));
+        const ex = get<UserRec & { company_id: number | null; role_id: number | null }>('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email);
         if (ex && ex.company_id !== c) throw badRequest('CONFLICT', ctx.m(`"${email}" e-poçtu artıq istifadə olunur`, `E-mail "${email}" is already in use`));
         if (!ex) {
-          const role = str(r.v.role);
           if (!role) throw badRequest('VALIDATION_ERROR', ctx.m('Yeni istifadəçi üçün "Rol" mütləqdir', '"Role" is required for a new user'));
           if (!ctx.opts.initialPassword) throw badRequest('VALIDATION_ERROR', ctx.m('Yeni istifadəçilər üçün idxal pəncərəsində ilkin şifrə daxil edin', 'Enter an initial password for new users in the import dialog'));
           const active = bool(r.v.active, true);
           if (active) assertSeatAvailable(c);
-          const id = Number(run(`INSERT INTO users (company_id, email, full_name, password_hash, role, org_unit_id, job_family_id, job_title, language, is_active, created_at)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            c, email, str(r.v.fullName)!, hashPassword(ctx.opts.initialPassword), role, unit?.id ?? null, jf?.id ?? null, clearable(r.v.jobTitle) ?? null,
+          const id = Number(run(`INSERT INTO users (company_id, email, full_name, password_hash, role, role_id, org_unit_id, job_family_id, job_title, language, is_active, created_at)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            c, email, str(r.v.fullName)!, hashPassword(ctx.opts.initialPassword), role.base_role, role.id, unit?.id ?? null, jf?.id ?? null, clearable(r.v.jobTitle) ?? null,
             str(r.v.language) ?? 'az', +active, nowIso()).lastInsertRowid);
-          ctx.audit('USER', id, 'CREATED', { email, role });
+          ctx.audit('USER', id, 'CREATED', { email, role: role.code });
           outcome.set(r.row, { key: email, action: 'CREATE', changes: [] });
           done.push({ r, id });
           return;
@@ -291,18 +294,19 @@ const USERS: EntityDef = {
         const next = { ...ex };
         const changes: string[] = [];
         setField(next, 'full_name', r.v.fullName, changes, ctx.m('ad', 'name'));
-        setField(next, 'role', r.v.role, changes, ctx.m('rol', 'role'));
+        const curCode = roleOfUser({ company_id: c, role: ex.role as never, role_id: ex.role_id })?.code ?? ex.role;
+        if (role && role.code !== curCode) { next.role = role.base_role; next.role_id = role.id; changes.push(ctx.m('rol', 'role')); }
         setField(next, 'org_unit_id', r.v.unitCode === CLEAR ? CLEAR : unit?.id, changes, ctx.m('vahid', 'unit'));
         setField(next, 'job_family_id', r.v.jobFamilyCode === CLEAR ? CLEAR : jf?.id, changes, ctx.m('peşə ailəsi', 'job family'));
         setField(next, 'job_title', r.v.jobTitle, changes, ctx.m('vəzifə', 'job title'));
         if (typeof r.v.active === 'boolean') setField(next, 'is_active', +r.v.active, changes, ctx.m('aktivlik', 'active'));
-        if (ex.id === ctx.user.id && (next.role !== ex.role || next.is_active === 0)) {
+        if (ex.id === ctx.user.id && ((role && role.code !== curCode) || next.is_active === 0)) {
           throw badRequest('VALIDATION_ERROR', ctx.m('Öz rolunuzu dəyişə və ya özünüzü deaktiv edə bilməzsiniz', 'You cannot change your own role or deactivate yourself'));
         }
         if (next.is_active === 1 && ex.is_active === 0) assertSeatAvailable(c);
         if (changes.length) {
-          run('UPDATE users SET full_name = ?, role = ?, org_unit_id = ?, job_family_id = ?, job_title = ?, is_active = ? WHERE id = ?',
-            next.full_name, next.role, next.org_unit_id, next.job_family_id, next.job_title, next.is_active, ex.id);
+          run('UPDATE users SET full_name = ?, role = ?, role_id = ?, org_unit_id = ?, job_family_id = ?, job_title = ?, is_active = ? WHERE id = ?',
+            next.full_name, next.role, next.role_id, next.org_unit_id, next.job_family_id, next.job_title, next.is_active, ex.id);
           ctx.audit('USER', ex.id, 'UPDATED', { changes });
         }
         done.push({ r, id: ex.id });

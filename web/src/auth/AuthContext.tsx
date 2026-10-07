@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { can, type Lang, type MeDto, type Permission } from '@finbridge/shared';
+import type { Lang, MeDto, Permission } from '@finbridge/shared';
 import { api, getToken, setToken, setUnauthorizedHandler } from '../api/client';
 import { useI18n } from '../i18n';
 
@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthValue>(() => ({
     user, ready, login, logout, refresh, changeLanguage,
-    can: (p) => (user ? can(user.role, p) : false),
+    can: (p) => (user ? user.permissions.includes(p) : false),
   }), [user, ready, login, logout, refresh, changeLanguage]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

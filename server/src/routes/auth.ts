@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { permissionsFor, type MeDto } from '@finbridge/shared';
+import type { MeDto } from '@finbridge/shared';
+import { userPermissions, userScope } from '../lib/permissions';
 import { get, run } from '../db/database';
 import { currentUser, requireAuth } from '../auth/middleware';
 import { hashPassword, verifyPassword } from '../auth/password';
@@ -15,7 +16,7 @@ export const authRouter = Router();
 
 function meDto(user: UserRow): MeDto {
   const company = user.company_id ? get<CompanyRow>('SELECT * FROM companies WHERE id = ?', user.company_id) : undefined;
-  return { ...toUserDto(user), permissions: permissionsFor(user.role), company: company ? toCompanyDto(company) : null, pendingTasks: user.company_id ? inbox(user).length : 0 };
+  return { ...toUserDto(user), permissions: userPermissions(user), dataScope: userScope(user), company: company ? toCompanyDto(company) : null, pendingTasks: user.company_id ? inbox(user).length : 0 };
 }
 
 const loginSchema = z.object({

@@ -1,6 +1,7 @@
 import { get, run, tx } from '../db/database';
 import { nowIso } from '../lib/clock';
 import { DEFAULT_UNIT_TYPES } from '../templates/data';
+import { ensureSystemRoles } from './roles';
 
 /** Creates the per-company defaults: org unit types, the company root unit, settings and the BASE scenario. */
 export function bootstrapCompany(companyId: number, companyName: string): number {
@@ -23,6 +24,7 @@ export function bootstrapCompany(companyId: number, companyName: string): number
     ).lastInsertRowid;
     run('INSERT INTO company_settings (company_id, updated_at) VALUES (?, ?)', companyId, ts);
     run("INSERT INTO budget_scenarios (company_id, code, name, is_default) VALUES (?, 'BASE', 'Əsas ssenari', 1)", companyId);
+    ensureSystemRoles(companyId);
     return rootId;
   });
 }

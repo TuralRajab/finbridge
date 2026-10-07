@@ -1,4 +1,4 @@
-import type { LicensePlan, Permission, Role } from './roles';
+import type { DataScope, LicensePlan, Permission, Role } from './roles';
 import type {
   ApproverConfig, ApproverType, BudgetCheckState, InstanceStatus, RequestStatus, RequestType, SectionStatus,
   TaskStatus, VersionKind, VersionStatus, WorkflowEntity, WorkflowType,
@@ -17,7 +17,12 @@ export interface UserDto {
   companyId: number | null;
   email: string;
   fullName: string;
+  /** Built-in role the user's role is based on (identity for CEO / CFO / Finance approver steps). */
   role: Role;
+  /** Effective company role (built-in or custom). */
+  roleId: number | null;
+  roleCode: string;
+  roleName: string;
   orgUnitId: number | null;
   orgUnitName: string | null;
   managerId: number | null;
@@ -30,8 +35,30 @@ export interface UserDto {
 
 export interface MeDto extends UserDto {
   permissions: Permission[];
+  dataScope: DataScope | null;
   company: CompanyDto | null;
   pendingTasks: number;
+}
+
+/** A company role: built-in (editable copy, ADMIN locked) or custom. */
+export interface CompanyRoleDto {
+  id: number;
+  code: string;
+  name: string;
+  nameEn: string | null;
+  description: string | null;
+  /** Built-in role this role is based on: users count as this role in CEO / CFO / Finance approver steps. */
+  baseRole: Exclude<Role, 'SUPER_ADMIN'>;
+  permissions: Permission[];
+  dataScope: DataScope;
+  isSystem: boolean;
+  /** System roles whose permissions cannot be changed (Administrator). */
+  isLocked: boolean;
+  isActive: boolean;
+  userCount: number;
+  /** For system roles: true when the permissions differ from FinBridge defaults. */
+  isCustomized: boolean;
+  updatedAt: string;
 }
 
 export interface LicenseDto {
@@ -168,7 +195,7 @@ export interface TemplateAccountDto {
 
 export interface TemplateUnit { code: string; type: string; parent: string | null; nameAz: string; nameEn: string }
 export interface TemplateCostCenter { code: string; unit: string; nameAz: string; nameEn: string; accounts?: string[] }
-export interface TemplateWorkflowStep { name: string; approverType: ApproverType; config?: ApproverConfig; condition?: Condition | null; slaHours?: number | null }
+export interface TemplateWorkflowStep { name: string; approverType: ApproverType; config?: ApproverConfig; condition?: Condition | null; slaHours?: number | null; behaviour?: Partial<import('./workflow').StepBehaviour> }
 export interface TemplateWorkflow { name: string; type: WorkflowType; priority?: number; conditions?: Condition | null; steps: TemplateWorkflowStep[] }
 export interface TemplateKpi { code: string; nameAz: string; nameEn: string; formulaAz: string; formulaEn: string }
 
@@ -311,6 +338,13 @@ export interface WorkflowStepDto {
   condition: Condition | null;
   slaHours: number | null;
   escalation: { approverType: ApproverType; config: ApproverConfig } | null;
+  /* stage behaviour (see StepBehaviour in workflow.ts) */
+  approvalMode: import('./workflow').ApprovalMode;
+  allowReject: boolean;
+  allowReturn: boolean;
+  returnTo: import('./workflow').ReturnTarget;
+  requireCommentOnApprove: boolean;
+  instructions: string | null;
 }
 
 export interface WorkflowDefinitionDto {
@@ -341,13 +375,36 @@ export interface WorkflowTaskDto {
   stepName: string;
   approverType: ApproverType;
   status: TaskStatus;
-  assignees: { userId: number; name: string; reason: string }[];
+  assignees: {
+    userId: number; name: string; reason: string;
+    /** Delegate rows: the person the delegate acts for. */
+    onBehalfOf: string | null;
+    /** Counts towards "all must approve" (resolved / fallback approvers, not delegates or escalations). */
+    required: boolean;
+    decision: import('./workflow').AssigneeDecision | null;
+    decidedAt: string | null;
+    /** Who actually recorded the decision (differs when a delegate acted). */
+    decidedBy: string | null;
+    decisionComment: string | null;
+  }[];
   activatedAt: string | null;
   dueAt: string | null;
   isOverdue: boolean;
   actedBy: string | null;
   actedAt: string | null;
   comment: string | null;
+  /* stage behaviour from the instance snapshot */
+  approvalMode: import('./workflow').ApprovalMode;
+  allowReject: boolean;
+  allowReturn: boolean;
+  returnTo: import('./workflow').ReturnTarget;
+  requireCommentOnApprove: boolean;
+  instructions: string | null;
+  /** ALL mode progress ("2 / 3"); ANY mode: 1 required. */
+  approvalsRequired: number;
+  approvalsDone: number;
+  /** Set when this task re-activated the stage because a later stage returned the item to it. */
+  returnedFrom: { taskId: number; stepName: string; by: string | null; comment: string | null; at: string | null } | null;
 }
 
 export interface WorkflowActionDto {
@@ -375,6 +432,8 @@ export interface WorkflowInstanceDto {
   actions: WorkflowActionDto[];
   canAct: boolean;
   myTaskId: number | null;
+  /** The current user's own decision on the pending task (ALL mode: already approved, waiting for the others). */
+  myDecision: import('./workflow').AssigneeDecision | null;
   canCancel: boolean;
 }
 

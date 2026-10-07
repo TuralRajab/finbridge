@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
-import { can, type Permission } from '@finbridge/shared';
+import type { Permission } from '@finbridge/shared';
+import { userCan } from '../lib/permissions';
 import { get } from '../db/database';
 import { forbidden, HttpError } from '../lib/errors';
 import { assertLicense, type CompanyRow } from '../lib/license';
@@ -37,7 +38,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
 export function requirePermission(...permissions: Permission[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     const user = currentUser(req);
-    if (!permissions.every((p) => can(user.role, p))) throw forbidden();
+    if (!permissions.every((p) => userCan(user, p))) throw forbidden();
     next();
   };
 }
