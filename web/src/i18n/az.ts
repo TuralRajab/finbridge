@@ -135,6 +135,7 @@ export const az = {
     workflows: 'Təsdiq axınları',
     delegations: 'Səlahiyyət ötürmə',
     users: 'İstifadəçilər və rollar',
+    bulkImport: 'Toplu idxal',
     audit: 'Audit jurnalı',
     company: 'Şirkət və lisenziya',
     platform: 'Şirkətlər (platforma)',
@@ -172,6 +173,7 @@ export const az = {
     FORECAST_SUBMISSION: 'Proqnozun təqdimatı',
     FORECAST_APPROVAL: 'Proqnozun təsdiqi',
   },
+  bulkKind: { ORG_UNITS: 'Təşkilati struktur', JOB_FAMILIES: 'Peşə ailələri', USERS: 'İstifadəçilər', POSITIONS: 'Vəzifələr', ACCOUNTS: 'Hesablar planı', COST_CENTERS: 'Xərc mərkəzləri', EXCHANGE_RATES: 'Valyuta məzənnələri' },
   workflowEntity: { BUDGET_SECTION: 'Büdcə bölməsi', BUDGET_VERSION: 'Büdcə versiyası', CHANGE_REQUEST: 'Dəyişiklik sorğusu', PURCHASE_REQUEST: 'Sorğu' },
   approverType: {
     SPECIFIC_USER: 'Konkret istifadəçi',

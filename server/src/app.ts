@@ -16,6 +16,7 @@ import { authRouter } from './routes/auth';
 import { budgetsRouter } from './routes/budgets';
 import { changesRouter } from './routes/changes';
 import { companyRouter } from './routes/company';
+import { bulkImportRouter } from './routes/bulkImport';
 import { exportsRouter } from './routes/exports';
 import { accountsRouter, costCentersRouter } from './routes/masterdata';
 import { orgRouter } from './routes/org';
@@ -53,6 +54,7 @@ export function createApp(): express.Express {
   api.use('/audit', auditRouter);
   api.use('/attachments', attachmentsRouter);
   api.use('/export', exportsRouter);
+  api.use('/bulk-import', bulkImportRouter);
   app.use('/api', api);
   app.use('/api', () => { throw notFound('Endpoint'); });
 

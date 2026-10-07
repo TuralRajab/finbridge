@@ -73,3 +73,25 @@ DRAFT ─submit─▶ IN_APPROVAL ─▶ APPROVED ─(fakt / hesab-faktura)─�
 - Əvvəlcə yoxlama (dry-run): sətir üzrə xəta və xəbərdarlıqlar (dublikat, qrup hesabı, XM üçün icazəsiz hesab, naməlum kod).
   Xəta varsa heç nə yazılmır. Rejimlər: `replace` / `append`; "olmayanları yarat" seçimi.
 - Hər idxal `import_jobs` cədvəlində saxlanılır (Audit jurnalı → İdxal tarixçəsi).
+
+## Toplu idxal (master data)
+
+Mənbə: [`server/src/services/bulkImport/`](../server/src/services/bulkImport/). İdarəetmə → **Toplu idxal** səhifəsində və hər
+bölmənin öz səhifəsində ("Excel-dən toplu idxal" düyməsi).
+
+| Bölmə | Uyğunlaşdırma | Qeyd |
+|-------|---------------|------|
+| Struktur vahidləri | kod | Yuxarı vahid eyni faylda ola bilər; icazəli yuxarı növlər və dövr qadağası yoxlanılır |
+| Peşə ailələri | kod | Sahib e-poçtla |
+| İstifadəçilər | e-poçt | Şifrə faylda yoxdur — yeni istifadəçilərə idxal pəncərəsində verilən ilkin şifrə; rəhbər eyni faylda ola bilər; lisenziya limiti yoxlanılır |
+| Vəzifələr | kod | Vəzifə sahibi e-poçtla |
+| Hesablar planı | hesab kodu | Alt hesab yazılan hesab qrupa çevrilir (əməliyyatı yoxdursa); öz alt hesabının altına köçürmə qadağandır |
+| Xərc mərkəzləri | kod | İcazəli hesablar vergüllə; qrup hesabı qəbul edilmir |
+| Valyuta məzənnələri | valyuta + tarix | Baza valyutası qəbul edilmir |
+
+- **Şablon**: məlumat vərəqi (mütləq sütunlar `*` ilə, başlıqda izah), açılan siyahılar, "Təlimat" və "Kodlar" vərəqləri.
+  "Mövcud məlumatla" şablonu cari qeydləri ehtiva edir: dəyişdirib geri yükləmək olar (dəyişməyən sətirlər "Dəyişməz" olur).
+- **Qaydalar**: başlıqlar AZ və ya EN; boş xana cari dəyəri saxlayır; `-` istəyə bağlı dəyəri silir; Bəli/Xeyr, 1/0; tarix İİİİ-AA-GG və ya GG.AA.İİİİ.
+- **Yoxlama** real yaratma / yeniləmə məntiqini bir tranzaksiyada icra edib geri qaytarır — nəticə idxalla eynidir. Hər hansı sətirdə
+  xəta varsa heç bir sətir yazılmır. Rejim: "Yenilə" (upsert) və ya "Toxunma" (yalnız yenilər).
+- Hər yoxlama və idxal `import_jobs` cədvəlinə (yaradılan / yenilənən / dəyişməz sayları ilə), hər dəyişiklik audit jurnalına yazılır.

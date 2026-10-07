@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { WORKFLOW_TYPES, type AuditLogDto, type ImportJobDto } from '@finbridge/shared';
 import { api, qs } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -157,7 +157,8 @@ type Tab = 'log' | 'workflow' | 'imports';
 export function AuditPage() {
   const L = useLocal(TEXT);
   const { can } = useAuth();
-  const [tab, setTab] = useState<Tab>('log');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(params.get('tab') === 'imports' ? 'imports' : params.get('tab') === 'workflow' ? 'workflow' : 'log');
   const tabs: { value: Tab; label: string }[] = [{ value: 'log', label: L.tabLog }, { value: 'workflow', label: L.tabWorkflow }];
   if (can('excel.import')) tabs.push({ value: 'imports', label: L.tabImports });
   return (
@@ -474,7 +475,7 @@ function ImportsTab() {
               {data.map((j) => (
                 <tr key={j.id}>
                   <td className="sec-nowrap">{date(j.createdAt, locale, true)}</td>
-                  <td>{j.kind === 'BUDGET' ? L.kindBudget : L.kindActuals}</td>
+                  <td>{j.kind === 'BUDGET' ? L.kindBudget : j.kind === 'ACTUALS' ? L.kindActuals : t(`bulkKind.${j.kind}` as TKey)}{(j.createdCount > 0 || j.updatedCount > 0) && <div className="hint">+{j.createdCount} · ✎{j.updatedCount}</div>}</td>
                   <td className="sec-mono">{j.fileName}</td>
                   <td>{j.userName ?? '—'}</td>
                   <td><Badge tone={status[j.status][1]}>{status[j.status][0]}</Badge></td>

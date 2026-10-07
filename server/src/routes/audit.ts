@@ -26,10 +26,11 @@ auditRouter.get('/workflow-actions', requirePermission('audit.view'), (req, res)
 });
 
 auditRouter.get('/imports', requirePermission('excel.import'), (req, res) => {
-  res.json(all<{ id: number; kind: ImportJobDto['kind']; file_name: string; status: ImportJobDto['status']; rows_read: number; rows_valid: number; total: number; errors: string | null; user_name: string | null; created_at: string }>(
+  res.json(all<{ id: number; kind: ImportJobDto['kind']; file_name: string; status: ImportJobDto['status']; rows_read: number; rows_valid: number; total: number; created_count: number; updated_count: number; unchanged_count: number; errors: string | null; user_name: string | null; created_at: string }>(
     'SELECT j.*, u.full_name AS user_name FROM import_jobs j LEFT JOIN users u ON u.id = j.user_id WHERE j.company_id = ? ORDER BY j.id DESC LIMIT 200', companyIdOf(req),
   ).map((j): ImportJobDto => ({
     id: j.id, kind: j.kind, fileName: j.file_name, status: j.status, rowsRead: j.rows_read, rowsValid: j.rows_valid, total: j.total,
+    createdCount: j.created_count, updatedCount: j.updated_count, unchangedCount: j.unchanged_count,
     errorCount: parseJson<{ level?: string }[]>(j.errors, []).filter((e) => e.level !== 'warning').length, userName: j.user_name, createdAt: j.created_at,
   })));
 });

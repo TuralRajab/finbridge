@@ -5,6 +5,7 @@ import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { CrudPage } from '../../components/CrudPage';
 import { Alert, Badge, Button, Card, Empty, ErrorMessage, ExportButton, Field, Icon, Input, Modal, PageHeader, Select, Spinner, Tabs } from '../../components/ui';
+import { BulkImportButton } from '../../components/BulkImportDialog';
 import { fmt, useI18n, useLocal } from '../../i18n';
 import { useDisplayName, useMasterData } from '../../lib/masterdata';
 import { useAsync } from '../../lib/useAsync';
@@ -74,10 +75,15 @@ export function OrgStructurePage() {
   const [tab, setTab] = useState<Tab>('tree');
   const md = useMasterData({ users: true });
   const types = useAsync(() => api<OrgUnitTypeDto[]>('GET', '/org/types'), []);
+  const [dataVersion, setDataVersion] = useState(0);
 
   return (
     <>
-      <PageHeader title={L.title} subtitle={L.subtitle} actions={can('excel.export') && <ExportButton path="/export/org-units" filename="org-structure.xlsx" />} />
+      <PageHeader title={L.title} subtitle={L.subtitle} actions={<>
+        {can('excel.export') && <ExportButton path="/export/org-units" filename="org-structure.xlsx" />}
+        {canManage && <BulkImportButton key={tab} kind={tab === 'jobs' ? 'JOB_FAMILIES' : tab === 'positions' ? 'POSITIONS' : 'ORG_UNITS'}
+          onDone={() => { setDataVersion((v) => v + 1); void md.reload(); void types.reload(); }} />}
+      </>} />
       {!canManage && <p className="hint mb-8">{L.readOnly}</p>}
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[
         { value: 'tree', label: L.tabTree }, { value: 'types', label: L.tabTypes }, { value: 'jobs', label: L.tabJobs }, { value: 'positions', label: L.tabPositions },
@@ -86,8 +92,8 @@ export function OrgStructurePage() {
         <>
           {tab === 'tree' && <Hierarchy units={md.data.units} costCenters={md.data.costCenters} users={md.data.users} types={types.data} canManage={canManage} reload={md.reload} />}
           {tab === 'types' && <UnitTypes types={types.data} canManage={canManage} reload={async () => { await types.reload(); await md.reload(); }} />}
-          {tab === 'jobs' && <JobFamilies users={md.data.users} canManage={canManage} />}
-          {tab === 'positions' && <Positions users={md.data.users} units={md.data.units} canManage={canManage} />}
+          {tab === 'jobs' && <JobFamilies key={dataVersion} users={md.data.users} canManage={canManage} />}
+          {tab === 'positions' && <Positions key={dataVersion} users={md.data.users} units={md.data.units} canManage={canManage} />}
         </>
       )}
     </>

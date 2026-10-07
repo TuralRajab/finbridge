@@ -637,14 +637,65 @@ export interface ImportReport {
   jobId: number | null;
 }
 
+/** Master-data entities that can be created / updated in bulk from an Excel template. Order = recommended import order. */
+export const BULK_IMPORT_KINDS = ['ORG_UNITS', 'JOB_FAMILIES', 'USERS', 'POSITIONS', 'ACCOUNTS', 'COST_CENTERS', 'EXCHANGE_RATES'] as const;
+export type BulkImportKind = (typeof BULK_IMPORT_KINDS)[number];
+export type ImportKind = 'BUDGET' | 'ACTUALS' | BulkImportKind;
+
+export interface BulkImportColumnDto {
+  key: string;
+  header: string;
+  /** true = always, 'create' = only for new records */
+  required: boolean | 'create';
+  type: 'text' | 'code' | 'email' | 'number' | 'date' | 'bool' | 'enum' | 'list';
+  options: string[];
+  hint: string;
+  example: string;
+}
+
+export interface BulkImportKindDto {
+  kind: BulkImportKind;
+  title: string;
+  description: string;
+  /** How existing records are matched: e.g. "Kod" or "E-poçt". */
+  matchBy: string;
+  columns: BulkImportColumnDto[];
+  existing: number;
+  canImport: boolean;
+  needsPassword: boolean;
+}
+
+export type BulkRowAction = 'CREATE' | 'UPDATE' | 'UNCHANGED' | 'SKIP' | 'ERROR';
+
+export interface BulkImportReport {
+  kind: BulkImportKind;
+  dryRun: boolean;
+  applied: boolean;
+  rowsRead: number;
+  rowsValid: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  columns: ImportColumn[];
+  errors: ImportIssue[];
+  warnings: ImportIssue[];
+  /** Per-row outcome (first 1000 rows). */
+  rows: { row: number; key: string; action: BulkRowAction; changes: string[] }[];
+  jobId: number | null;
+}
+
 export interface ImportJobDto {
   id: number;
-  kind: 'BUDGET' | 'ACTUALS';
+  kind: ImportKind;
   fileName: string;
   status: 'VALIDATED' | 'APPLIED' | 'FAILED';
   rowsRead: number;
   rowsValid: number;
   total: number;
+  createdCount: number;
+  updatedCount: number;
+  unchangedCount: number;
   errorCount: number;
   userName: string | null;
   createdAt: string;

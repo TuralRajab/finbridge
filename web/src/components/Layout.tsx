@@ -46,6 +46,7 @@ const SECTIONS: { title: TKey; items: NavItem[] }[] = [
       { to: '/admin/cost-centers', label: 'nav.costCenters', icon: 'costCenters', permission: 'masterdata.view' },
       { to: '/admin/accounts', label: 'nav.accounts', icon: 'accounts', permission: 'masterdata.view' },
       { to: '/admin/templates', label: 'nav.templates', icon: 'template', permission: 'templates.apply' },
+      { to: '/admin/import', label: 'nav.bulkImport', icon: 'upload', permission: 'excel.import' },
       { to: '/admin/financial', label: 'nav.financial', icon: 'settings', permission: 'coa.manage' },
       { to: '/admin/workflows', label: 'nav.workflows', icon: 'workflow', permission: 'workflow.manage' },
       { to: '/delegations', label: 'nav.delegations', icon: 'delegate', permission: 'masterdata.view' },

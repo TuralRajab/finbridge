@@ -4,6 +4,7 @@ import { COMPANY_ROLES, type CompanyDto, type JobFamilyDto, type Lang, type OrgU
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { Alert, Badge, Button, Card, Empty, ErrorMessage, ExportButton, Field, Icon, Input, Modal, PageHeader, Select, Spinner, Tabs } from '../../components/ui';
+import { BulkImportButton } from '../../components/BulkImportDialog';
 import { fmt, useI18n, useLocal } from '../../i18n';
 import { date } from '../../lib/format';
 import { treeOptions, useDisplayName } from '../../lib/masterdata';
@@ -169,11 +170,12 @@ type Tab = 'users' | 'roles';
 export function UsersPage() {
   const L = useLocal(TEXT);
   const [tab, setTab] = useState<Tab>('users');
+  const [version, setVersion] = useState(0);
   return (
     <>
-      <PageHeader title={L.title} subtitle={L.subtitle} />
+      <PageHeader title={L.title} subtitle={L.subtitle} actions={<BulkImportButton kind="USERS" onDone={() => setVersion((v) => v + 1)} />} />
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ value: 'users', label: L.tabUsers }, { value: 'roles', label: L.tabRoles }]} />
-      {tab === 'users' ? <UsersTab /> : <RolesTab />}
+      {tab === 'users' ? <UsersTab key={version} /> : <RolesTab />}
     </>
   );
 }

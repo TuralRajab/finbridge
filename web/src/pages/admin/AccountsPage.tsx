@@ -3,6 +3,7 @@ import type { AccountDto, AccountType, CurrencyDto, ExpenseClass } from '@finbri
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { Badge, Button, Card, Empty, ErrorMessage, ExportButton, Field, Icon, Input, Modal, PageHeader, Select, Spinner } from '../../components/ui';
+import { BulkImportButton } from '../../components/BulkImportDialog';
 import { fmt, useI18n, useLocal } from '../../i18n';
 import { useDisplayName } from '../../lib/masterdata';
 import { useAsync } from '../../lib/useAsync';
@@ -175,6 +176,7 @@ export function AccountsPage() {
     <>
       <PageHeader title={L.title} subtitle={L.subtitle} actions={<>
         {can('excel.export') && <ExportButton path="/export/accounts" filename="chart-of-accounts.xlsx" />}
+        {canManage && <BulkImportButton kind="ACCOUNTS" onDone={() => void reload()} />}
         {canManage && <Button variant="primary" onClick={() => openNew()}><Icon name="plus" /> {L.newAccount}</Button>}
       </>} />
       {!canManage && user && <p className="hint mb-8">{L.readOnly}</p>}

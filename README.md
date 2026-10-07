@@ -28,6 +28,7 @@ gətirmək (idxal) və hesabatları çıxarmaq (ixrac) üçün qalır.
 | **Təsdiq axınları** | Vizual konstruktor: növ, şərtlər (məbləğ, hesab, xərc mərkəzi, departament, OPEX/CAPEX…), mərhələlər, dinamik təsdiqləyənlər, mərhələ şərtləri (hədd), SLA, eskalasiya, prioritet, qüvvədə olma tarixləri, kopyalama, aktiv/deaktiv, marşrut önizləməsi | İdarəetmə → Təsdiq axınları |
 | **Təsdiqlərim** | Mənə təyin olunmuş və mənə ötürülmüş mərhələlər, gecikmələr | İcmal → Təsdiqlərim |
 | **Səlahiyyət ötürmə** | Məzuniyyət dövrü üçün təsdiq hüququnun başqasına verilməsi | İdarəetmə → Səlahiyyət ötürmə |
+| **Toplu idxal** | Hər bölmə üçün Excel şablonu (boş və ya mövcud məlumatla, təlimat, kod siyahıları, açılan siyahılar): struktur vahidləri, peşə ailələri, istifadəçilər, vəzifələr, hesablar planı, xərc mərkəzləri, məzənnələr. Əvvəlcə yoxlama, xəta olduqca heç nə yazılmır; təkrar yükləmə mövcud qeydləri yeniləyir | İdarəetmə → Toplu idxal |
 | **Hesabatlar** | İdarəetmə paneli; büdcə istifadəsi (Şirkət → Vahid → XM → Hesab → Əməliyyat drill-down); təsdiq axınları hesabatı; dəyişikliklər hesabatı | Hesabatlar |
 | **Təhlükəsizlik və audit** | Rollar + obyekt səviyyəli görünürlük (serverdə), dəyişməz audit jurnalı, idxal tarixçəsi | İdarəetmə → İstifadəçilər və rollar, Audit jurnalı |
 

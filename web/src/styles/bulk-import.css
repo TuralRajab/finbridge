@@ -1,0 +1,28 @@
+.bi-step { font-size: 14px; margin: 18px 0 8px; color: var(--ink); }
+.bi-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.bi-mode { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 8px 0 12px; display: grid; gap: 6px; }
+.bi-mode legend { font-weight: 600; padding: 0 4px; font-size: 13px; }
+.bi-mode label { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.bi-mode input { margin-top: 3px; }
+.bi-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 8px 0 12px; }
+.bi-stat { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; display: grid; gap: 2px; background: var(--subtle); }
+.bi-stat span { font-size: 12px; color: var(--muted); }
+.bi-stat b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.bi-success b { color: var(--under); }
+.bi-info b { color: var(--info); }
+.bi-danger { border-color: var(--over-border); background: var(--over-bg); }
+.bi-danger b { color: var(--over); }
+.bi-warning { border-color: var(--warn-border); background: var(--warn-bg); }
+.bi-warning b { color: var(--warn); }
+.bi-table { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.bi-table code { font-size: 12px; }
+.bi-hub { display: grid; gap: 14px; }
+.bi-card-head { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.bi-num { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--brand-50); color: var(--brand); font-weight: 700; flex: 0 0 auto; }
+.bi-title { display: flex; gap: 12px; align-items: flex-start; min-width: 0; flex: 1 1 320px; }
+.bi-title h2 { font-size: 16px; margin-bottom: 2px; }
+.bi-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.bi-cols summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 13px; margin-top: 10px; }
+.bi-cols table td { vertical-align: top; }
+.bi-opts { color: var(--text2); font-size: 12px; }
+.bi-hub > .card { margin: 0; }

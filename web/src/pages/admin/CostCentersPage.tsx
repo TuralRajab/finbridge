@@ -3,6 +3,7 @@ import type { AccountDto, CostCenterDto, CurrencyDto } from '@finbridge/shared';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { Badge, Button, Card, Empty, ErrorMessage, ExportButton, Field, Icon, Input, Modal, PageHeader, Select, Spinner } from '../../components/ui';
+import { BulkImportButton } from '../../components/BulkImportDialog';
 import { fmt, useI18n, useLocal } from '../../i18n';
 import { date } from '../../lib/format';
 import { treeOptions, useDisplayName, useMasterData } from '../../lib/masterdata';
@@ -148,6 +149,7 @@ export function CostCentersPage() {
     <>
       <PageHeader title={L.title} subtitle={L.subtitle} actions={<>
         {can('excel.export') && <ExportButton path="/export/cost-centers" filename="cost-centers.xlsx" />}
+        {canManage && <BulkImportButton kind="COST_CENTERS" onDone={() => void md.reload()} />}
         {canManage && <Button variant="primary" onClick={openNew}><Icon name="plus" /> {L.newCc}</Button>}
       </>} />
       <ErrorMessage error={rowError} />

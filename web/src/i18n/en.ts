@@ -133,6 +133,7 @@ export const en: Dict = {
     workflows: 'Approval workflows',
     delegations: 'Delegations',
     users: 'Users & roles',
+    bulkImport: 'Bulk import',
     audit: 'Audit log',
     company: 'Company & licence',
     platform: 'Companies (platform)',
@@ -170,6 +171,7 @@ export const en: Dict = {
     FORECAST_SUBMISSION: 'Forecast submission',
     FORECAST_APPROVAL: 'Forecast approval',
   },
+  bulkKind: { ORG_UNITS: 'Organisation units', JOB_FAMILIES: 'Job families', USERS: 'Users', POSITIONS: 'Positions', ACCOUNTS: 'Chart of accounts', COST_CENTERS: 'Cost centers', EXCHANGE_RATES: 'Exchange rates' },
   workflowEntity: { BUDGET_SECTION: 'Budget section', BUDGET_VERSION: 'Budget version', CHANGE_REQUEST: 'Change request', PURCHASE_REQUEST: 'Request' },
   approverType: {
     SPECIFIC_USER: 'Specific user',

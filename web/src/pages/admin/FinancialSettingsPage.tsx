@@ -4,6 +4,7 @@ import { MONTH_NAMES, MONTH_SHORT, type CompanyDto, type CompanySettingsDto, typ
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { Alert, Badge, Button, Card, Empty, ErrorMessage, Field, Icon, Input, Modal, PageHeader, Select, Spinner, Tabs } from '../../components/ui';
+import { BulkImportButton } from '../../components/BulkImportDialog';
 import { fmt, useI18n, useLocal } from '../../i18n';
 import { date } from '../../lib/format';
 import { useAsync } from '../../lib/useAsync';
@@ -137,17 +138,19 @@ type Tab = 'control' | 'currencies' | 'fiscal';
 
 export function FinancialSettingsPage() {
   const L = useLocal(TEXT);
+  const { can } = useAuth();
   const [tab, setTab] = useState<Tab>('control');
+  const [version, setVersion] = useState(0);
   const company = useAsync(() => api<CompanyDto>('GET', '/company'), []);
   return (
     <>
-      <PageHeader title={L.title} subtitle={L.subtitle} />
+      <PageHeader title={L.title} subtitle={L.subtitle} actions={can('coa.manage') && <BulkImportButton kind="EXCHANGE_RATES" onDone={() => { setTab('currencies'); setVersion((v) => v + 1); }} />} />
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[
         { value: 'control', label: L.tabControl }, { value: 'currencies', label: L.tabCurrencies }, { value: 'fiscal', label: L.tabFiscal },
       ]} />
       {tab === 'control' && <ControlTab />}
       {tab !== 'control' && (company.loading && !company.data ? <Spinner /> : !company.data ? <ErrorMessage error={company.error} /> : (
-        tab === 'currencies' ? <CurrenciesTab company={company.data} /> : <FiscalTab company={company.data} />
+        tab === 'currencies' ? <CurrenciesTab key={version} company={company.data} /> : <FiscalTab company={company.data} />
       ))}
     </>
   );

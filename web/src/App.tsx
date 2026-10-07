@@ -12,6 +12,7 @@ import { PlatformPage } from './pages/PlatformPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AccountsPage } from './pages/admin/AccountsPage';
 import { AuditPage } from './pages/admin/AuditPage';
+import { BulkImportPage } from './pages/admin/BulkImportPage';
 import { CompanyPage } from './pages/admin/CompanyPage';
 import { CostCentersPage } from './pages/admin/CostCentersPage';
 import { FinancialSettingsPage } from './pages/admin/FinancialSettingsPage';
@@ -87,6 +88,7 @@ export function App() {
         <Route path="admin/organization" element={<Need permission="masterdata.view"><OrgStructurePage /></Need>} />
         <Route path="admin/cost-centers" element={<Need permission="masterdata.view"><CostCentersPage /></Need>} />
         <Route path="admin/accounts" element={<Need permission="masterdata.view"><AccountsPage /></Need>} />
+        <Route path="admin/import" element={<Need permission="excel.import"><BulkImportPage /></Need>} />
         <Route path="admin/templates" element={<Need permission="templates.apply"><TemplatesPage /></Need>} />
         <Route path="admin/financial" element={<Need permission="coa.manage"><FinancialSettingsPage /></Need>} />
         <Route path="admin/workflows" element={<Need permission="workflow.manage"><WorkflowListPage /></Need>} />
