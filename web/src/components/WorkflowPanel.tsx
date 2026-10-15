@@ -167,7 +167,7 @@ function WorkflowPanelInner({ instanceId, onChanged, title }: { instanceId: numb
             {inst.actions.map((a) => (
               <li key={a.id}>
                 <span className="muted">{date(a.createdAt, locale, true)}</span> · <b>{actionLabel(a)}</b> · {a.userName}
-                {a.comment && <> — “{a.comment}”</>}
+                {a.comment && !isSystemNote(a.comment) && <> — “{a.comment}”</>}
               </li>
             ))}
           </ul>
@@ -253,9 +253,16 @@ function TaskRow({ task, L }: { task: WorkflowTaskDto; L: typeof az }) {
         {task.instructions && task.status === 'PENDING' && <div className="wfpn-instructions"><b>{L.instructions}:</b> {task.instructions}</div>}
         {task.status === 'PENDING' && task.allowReturn && task.returnTo === 'PREVIOUS_STEP' && <div className="wf-meta">↩ {L.returnToPrev}</div>}
         {task.actedBy && <div className="wf-meta">{task.actedBy} · {date(task.actedAt, locale, true)}</div>}
-        {task.comment && <div className="tl-comment">“{task.comment}”</div>}
+        {task.comment && (isSystemNote(task.comment)
+          ? <div className="wf-meta">{t('workflowAction.AUTO_SKIP')}</div>
+          : <div className="tl-comment">“{task.comment}”</div>)}
       </div>
       <TaskStatusBadge status={task.status} />
     </li>
   );
+}
+
+/** Notes the engine writes itself (stored in English for the audit trail); shown translated instead of quoted. */
+function isSystemNote(comment: string): boolean {
+  return /self-approval skipped/i.test(comment);
 }
